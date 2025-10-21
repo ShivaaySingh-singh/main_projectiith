@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% load static %}
+    <meta charset="UTF-8">
+    <title>IIT Hyderabad – Faculty Portal</title>
+
+    <!-- Bootstrap & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        /* ===== Base Layout ===== */
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #f9fafc;
+            color: #333;
+        }
+
+        /* ===== Header ===== */
+        header {
+            background: linear-gradient(90deg, #f0f0f0, #faf8e8);
+            color: #333;
+            padding: 10px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #e6e6e6;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .logo {
+            height: 90px;
+            width: auto;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.2));
+        }
+
+        .admin-icon {
+            color: #4a4a4a;
+            font-size: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .admin-icon:hover {
+            color: #b58900;
+            transform: scale(1.15);
+        }
+
+        /* ===== Title Bar ===== */
+        .portal-title {
+            background: #fffdf3;
+            color: #444;
+            text-align: center;
+            padding: 18px 15px;
+            font-size: 28px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            border-bottom: 1px solid #e4e4e4;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+        }
+
+        .portal-title::after {
+            content: "";
+            display: block;
+            width: 120px;
+            height: 3px;
+            margin: 10px auto 0;
+            background: linear-gradient(90deg, #e2b714, #b58900);
+            border-radius: 10px;
+        }
+
+        /* ===== Main Content ===== */
+        .content {
+            flex: 1;
+            padding: 50px 25px;
+        }
+
+        .content-card {
+            background: #FFFFE0;
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            padding: 40px;
+            max-width: 1000px;
+            margin: 0 auto;
+            transition: all 0.3s ease;
+        }
+
+        .content-card:hover {
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+            transform: translateY(-3px);
+        }
+
+        /* ===== Footer ===== */
+        footer {
+            background: linear-gradient(90deg, #faf8e8, #f0f0f0);
+            color: #555;
+            padding: 22px;
+            text-align: center;
+            font-size: 15px;
+            font-weight: 500;
+            border-top: 1px solid #e6e6e6;
+            box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.05);
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                text-align: center;
+                padding: 20px;
+                gap: 10px;
+            }
+
+            .logo {
+                height: 70px;
+            }
+
+            .portal-title {
+                font-size: 22px;
+                padding: 15px;
+            }
+
+            .content {
+                padding: 30px 15px;
+            }
+
+            .content-card {
+                padding: 25px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ===== Header ===== -->
+    <header>
+        <div class="header-left">
+            <img src="{% static 'images/iith_logo.svg.png' %}" alt="IIT Hyderabad Logo" class="logo">
+        </div>
+
+        <div class="d-flex align-items-center gap-3">
+    <!-- ✅ Show Sheets Portal button only on homepage -->
+    {% if request.path == '/' %}
+        <a href="{% url 'login' %}?next=/sheets/dashboard/" 
+           class="btn btn-outline-dark btn-sm fw-semibold"
+           style="border-radius:8px;">
+            <i class="bi bi-file-spreadsheet"></i> Sheets Portal
+        </a>
+    {% endif %}
+
+            <!-- Admin Login Icon -->
+            <a href="/admin/" title="Admin Login">
+                <i class="bi bi-person-circle admin-icon"></i>
+            </a>
+        </div>
+    </header>
+
+    <!-- ===== Title Bar ===== -->
+    <div class="portal-title">
+        IIT Hyderabad Faculty Portal
+    </div>
+
+    <!-- ===== Main Content ===== -->
+    <div class="content">
+        <div class="content-card">
+            {% block content %}
+            {% endblock %}
+        </div>
+    </div>
+
+    <!-- ===== Footer ===== -->
+    <footer>
+        <p>&copy; 2025 Indian Institute of Technology Hyderabad — All Rights Reserved</p>
+    </footer>
+
+</body>
+</html>

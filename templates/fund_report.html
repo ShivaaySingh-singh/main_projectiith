@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="text-align:center;">PROJECT FUND STATUS REPORT</h2>
+<hr>
+
+<!-- Project Info -->
+<div style="margin-bottom:20px;">
+  <p><strong>Project Code:</strong> {{ project.project_no }}</p>
+  <p><strong>Project Title:</strong> {{ project.project_title }}</p>
+  <p><strong>Sanction No:</strong> {{ project.sanction_no }}</p>
+  <p><strong>Sanction Date:</strong> {{ project.sanction_date }}</p>
+  <p><strong>Project Start Date:</strong> {{ project.start_date }}</p>
+  <p><strong>Project End Date:</strong> {{ project.end_date }}</p>
+  <p><strong>Duration:</strong> {{ project.duration }}</p>
+  <p><strong>PI Name:</strong> {{ project.pi_name }}</p>
+  <p><strong>Department:</strong> {{ project.department }}</p>
+</div>
+
+<!-- Fund Details Table -->
+<table class="table table-bordered">
+  <thead style="background:#f0f0f0; text-align:center;">
+    <tr>
+      <th>Head Name</th>
+      <th>Sanction Amount</th>
+      <th>Opening Balance</th>
+      <th>Receipt</th>
+      <th>Total</th>
+      <th>Payments</th>
+      <th>Balance After Payment</th>
+      <th>Committed Bill</th>
+      <th>Present Bill</th>
+      <th>Balance</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for receipt in receipts %}
+    <tr>
+      <td>{{ receipt.category }}</td>
+      <td>{{ receipt.amount }}</td>
+      <td>{{ receipt.opening_balance }}</td>
+      <td>{{ receipt.receipt }}</td>
+      <td>{{ receipt.total }}</td>
+      <td>{{ receipt.payments }}</td>
+      <td>{{ receipt.balance_after_payment }}</td>
+      <td>{{ receipt.committed_bill }}</td>
+      <td>{{ receipt.present_bill }}</td>
+      <td>{{ receipt.balance }}</td>
+    </tr>
+    {% endfor %}
+    <tr style="background:#eee; font-weight:bold;">
+      <td>Total</td>
+      <td>{{ receipts|sum:"amount" }}</td>
+      <td>{{ receipts|sum:"opening_balance" }}</td>
+      <td>{{ receipts|sum:"receipt" }}</td>
+      <td>{{ receipts|sum:"total" }}</td>
+      <td>{{ receipts|sum:"payments" }}</td>
+      <td>{{ receipts|sum:"balance_after_payment" }}</td>
+      <td>{{ receipts|sum:"committed_bill" }}</td>
+      <td>{{ receipts|sum:"present_bill" }}</td>
+      <td>{{ receipts|sum:"balance" }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- Committed Bills -->
+<h3>Committed Bills</h3>
+<table class="table table-bordered">
+  <thead style="background:#f0f0f0;">
+    <tr>
+      <th>Inv.Date</th>
+      <th>Fund Head</th>
+      <th>Inv.No</th>
+      <th>Narration</th>
+      <th>Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="5" style="text-align:center;">No committed bills yet</td></tr>
+  </tbody>
+</table>
+{% endblock %}

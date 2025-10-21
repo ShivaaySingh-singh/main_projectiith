@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Project Fund Status Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 14px; margin: 40px; }
+        h2, h3 { text-align: center; margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid black; padding: 6px; text-align: center; font-size: 13px; }
+        th { background: #eee; }
+        .no-border td { border: none; text-align: left; padding: 4px; }
+        .signatures td { border: none; text-align: center; padding-top: 50px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h2>IIT Hyderabad - R&amp;D</h2>
+    <h3>PROJECT FUND STATUS REPORT</h3>
+    <h4>{{ project.start_date }} to {{ project.end_date }}</h4>
+
+    <table class="no-border">
+        <tr>
+            <td><strong>Project Code:</strong> {{ project.project_no }}</td>
+            <td><strong>Sanction Date:</strong> {{ project.start_date }}</td>
+        </tr>
+        <tr>
+            <td><strong>Project Title:</strong> {{ project.title }}</td>
+            <td><strong>Project End Date:</strong> {{ project.end_date }}</td>
+        </tr>
+        <tr>
+            <td><strong>Sanction Number:</strong> {{ project.sanction_no }}</td>
+            <td><strong>Project Duration:</strong> {{ project.duration }}</td>
+        </tr>
+    </table>
+
+    <h4>Admin Details:</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Role</th>
+                <th>Name</th>
+                <th>From Date</th>
+                <th>To Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>PI</td>
+                <td>{{ project.pi_name }}</td>
+                <td>{{ from_date }}</td>
+                <td>{{ to_date }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>Fund Details:</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Head Name</th>
+                <th>Sanction Amount</th>
+                <th>Opening Bal.</th>
+                <th>Receipt</th>
+                <th>Total</th>
+                <th>Payments</th>
+                <th>Bal. after payment</th>
+                <th>Committed Bill</th>
+                <th>Present Bill</th>
+                <th>Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in fund_details %}
+            <tr>
+                <td>{{ f.head_name }}</td>
+                <td>{{ f.sanction_amount }}</td>
+                <td>{{ f.opening_balance }}</td>
+                <td>{{ f.receipt }}</td>
+                <td>{{ f.total }}</td>
+                <td>{{ f.payments }}</td>
+                <td>{{ f.balance_after_payment }}</td>
+                <td>{{ f.committed_bill }}</td>
+                <td>{{ f.present_bill }}</td>
+                <td>{{ f.balance }}</td>
+            </tr>
+            {% endfor %}
+            <tr>
+                <th>Total</th>
+                <th>{{ totals.sanction }}</th>
+                <th>{{ totals.opening }}</th>
+                <th>{{ totals.receipt }}</th>
+                <th>{{ totals.total }}</th>
+                <th>{{ totals.payments }}</th>
+                <th>{{ totals.balance_after_payment }}</th>
+                <th>{{ totals.committed }}</th>
+                <th>{{ totals.present }}</th>
+                <th>{{ totals.balance }}</th>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>Committed Bills:</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Inv. Date</th>
+                <th>Fund Head</th>
+                <th>Inv. No</th>
+                <th>Narration</th>
+                <th>Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in bills %}
+            <tr>
+                <td>{{ b.inv_date }}</td>
+                <td>{{ b.fund_head }}</td>
+                <td>{{ b.inv_no }}</td>
+                <td>{{ b.narration }}</td>
+                <td>{{ b.amount }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">No committed bills</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <br><br>
+    <table class="signatures">
+        <tr>
+            <td>Dealing Assistant (SRC)</td>
+            <td>Assistant Registrar (SRC)</td>
+            <td>Deputy Registrar (SRC)</td>
+            <td>Dean (SRC)</td>
+        </tr>
+    </table>
+
+    <div style="text-align:center; margin-top:20px;">
+        <a href="{% url 'download_project_pdf' project.id %}" class="btn btn-danger">Download PDF</a>
+    </div>
+
+</body>
+</html>

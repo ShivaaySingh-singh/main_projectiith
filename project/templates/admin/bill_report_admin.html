@@ -1,0 +1,227 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* Global Styles */
+    .section {
+        margin: 40px auto;
+        max-width: 90%;
+    }
+
+    h2, h4 {
+        text-align: center;
+        background-color: #dbe7f9;
+        padding: 15px;
+        font-size: 1.8rem;
+        font-weight: bold;
+        border-radius: 5px;
+    }
+
+    table {
+        border-collapse: collapse !important;
+        width: 100%;
+        font-size: 1.1rem;
+    }
+
+    table th {
+        border: 1px solid #000 !important;
+        padding: 12px !important;
+        font-weight: bold;
+        font-size: 1.1rem;
+        background-color: #f0f0f0;
+        text-align: center;
+    }
+
+    table td {
+        border: 1px solid #000 !important;
+        padding: 10px !important;
+        font-size: 1.05rem;
+        text-align: center;
+    }
+
+    .form-select {
+        margin-top: 10px;
+        padding: 10px;
+        font-size: 1rem;
+    }
+
+    .text-center {
+        text-align: center;
+    }
+
+    .w-75 {
+        width: 75% !important;
+    }
+
+    .w-50 {
+        width: 50% !important;
+    }
+
+    .my-3 {
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .mt-4 {
+        margin-top: 2rem;
+    }
+
+    .fw-bold {
+        font-weight: bold;
+    }
+    @media print {
+  @page { size: A4; margin: 20mm; }
+  .form-select, .btn-print { display: none !important; }
+  .breadcrumbs, .module, #header, #container > header { display: none !important; }
+  table { page-break-inside: avoid; }
+  body { font-size: 13px; }
+}
+
+</style>
+
+<!-- ✅ Page Header -->
+<h2>BALANCE SHEET – SEED GRANT</h2>
+
+<!-- ✅ Seed Grant Selection -->
+<div class="text-center section">
+    <label><strong style="font-size: 1.2rem;">Select Seed Grant Number:</strong></label><br>
+    <select id="grant_select" class="form-select d-inline-block" style="max-width:300px;">
+
+        <option value="">-- Select --</option>
+        {% for no in all_short_nos %}
+            <option value="?grant_no={{ no }}" {% if selected_grant and selected_grant.grant_no == no %}selected{% endif %}>
+                {{ no }}
+            </option>
+        {% endfor %}
+    </select>
+    <div class="text-center my-3">
+  <button type="button" onclick="printReport()" class="btn-print" 
+          style="background:#4CAF50;color:white;border:none;padding:10px 20px;
+                 border-radius:5px;cursor:pointer;font-size:1rem;">
+    🖨️ Print / Save as PDF
+  </button>
+</div>
+
+</div>
+
+
+<!-- ✅ Project Info -->
+<div class="section">
+    <table class="table table-bordered w-75 mx-auto">
+    <tr><th>Name</th><td class="info-name">{{ selected_grant.name|default_if_none:"" }}</td></tr>
+    <tr><th>Department</th><td class="info-dept">{{ selected_grant.dept|default_if_none:"" }}</td></tr>
+    <tr><th>Title</th><td class="info-title">{{ selected_grant.title|default_if_none:"" }}</td></tr>
+    <tr><th>Seed Grant Number</th><td class="info-grantno">{{ selected_grant.grant_no|default_if_none:"" }}</td></tr>
+</table>
+
+</div>
+
+<!-- ✅ Budget Summary -->
+<div class="section">
+    <h4>Budget</h4>
+    <table class="table table-bordered w-50 mx-auto">
+        <thead>
+            <tr>
+                <th>1st Year Budget</th>
+                <th>2nd Year Budget</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="budget-year1">{{ selected_grant.year1_budget|default_if_none:"" }}</td>
+                <td class="budget-year2">{{ selected_grant.year2_budget|default_if_none:"" }}</td>
+                <td class="budget-total fw-bold"><strong>{{ selected_grant.total_budget|default_if_none:"" }}</strong></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- ✅ Detailed Budget Table -->
+<div class="section">
+    <h4>Detailed Budget</h4>
+    <table class="table table-bordered w-100 mx-auto" id="budget-table">
+
+        <thead>
+            <tr>
+                <th>S.No.</th>
+                <th>Sanction Head</th>
+                <th>Amount</th>
+                <th>Expenditure</th>
+                <th>Commitment</th>
+                <th>Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in report_rows %}
+            <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>{{ row.head|default_if_none:""}}</td>
+                <td>{{ row.sanction|default_if_none:""}}</td>
+                <td>{{ row.expenditure|default_if_none:"" }}</td>
+                <td>{{ row.commitment|default_if_none:"" }}</td>
+                <td>{{ row.balance|default_if_none:"" }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="table-secondary fw-bold">
+                <td colspan="2">Total</td>
+                <td>{{ totals.budget|default_if_none:"" }}</td>
+                <td>{{ totals.expenditure|default_if_none:"" }}</td>
+                <td>{{ totals.commitment|default_if_none:"" }}</td>
+                <td>{{ totals.balance|default_if_none:"" }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- ✅ Budget Footer Box -->
+<div class="section">
+    <table class="table table-bordered w-50 mx-auto">
+        <tr><th>Budget</th><td>{{ totals.budget|default_if_none:"" }}</td></tr>
+        <tr><th>Expenditure</th><td>{{ totals.expenditure|default_if_none:"" }}</td></tr>
+        <tr><th>Commitment</th><td>{{ totals.commitment|default_if_none:"" }}</td></tr>
+        <tr><th>Balance</th><td><strong>{{ totals.balance|default_if_none:"" }}</strong></td></tr>
+    </table>
+</div>
+
+<!-- ✅ Expenditure Details -->
+<div class="section">
+    <h4>Expenditure</h4>
+    <table class="table table-bordered w-100 mx-auto" id="expenditure-table">
+
+        <thead>
+            <tr>
+                <th>S.No.</th>
+                <th>Date</th>
+                <th>Seed Grant Short No</th>
+                <th>Project/Grant No</th>
+                <th>Expenditure Head</th>
+                <th>Voucher No</th>
+                <th>Particulars</th>
+                <th>Gross Amount (₹)</th>
+                <th>Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for exp in expenditures %}
+            <tr>
+                <td>{{ forloop.counter|default_if_none:"" }}</td>
+                <td>{{ exp.date|default_if_none:"" }}</td>
+                <td>{{ exp.grant_no|default_if_none:"" }}</td>
+                <td>{{ exp.head|default_if_none:"" }}</td>
+                <td>{{ exp.voucher_no|default_if_none:"" }}</td>
+                <td>{{ exp.particulars|default_if_none:"" }}</td>
+                <td>{{ exp.amount|default_if_none:"" }}</td>
+                <td>{{ exp.remarks|default_if_none:"" }}</td>
+                
+            </tr>
+            {% empty %}
+            <tr><td colspan="8">No expenditure records found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<script src="{% static 'js/grant-report.js' %}"></script>
+
+{% endblock %}

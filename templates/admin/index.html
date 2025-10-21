@@ -1,0 +1,26 @@
+{% extends "admin/index.html" %}
+
+{% block content %}
+<div style="margin-bottom:20px;">
+    <h2>Custom Reports</h2>
+
+    <!-- ✅ Fund Management Button -->
+    <a href="{% url 'admin:project_fund_detail' %}" class="button"
+       style="margin-right:10px; background:#2c3e50; color:white;
+              padding:8px 15px; border-radius:5px; text-decoration:none;">
+        📊 Project Fund Detail
+    </a>
+
+    <!-- ✅ Seed Grant Button -->
+    <a href="{% url 'admin:seed_grant_detail' %}" class="button"
+       style="background:#2c3e50; color:white;
+              padding:8px 15px; border-radius:5px; text-decoration:none;">
+         Seed Grant Report
+    </a>
+</div>
+
+<hr>
+
+<!-- 👇 Default Django Admin Dashboard bhi render hoga -->
+{{ block.super }}
+{% endblock %}

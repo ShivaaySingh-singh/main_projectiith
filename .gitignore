@@ -1,0 +1,22 @@
+# Ignore Python cache files
+*.pyc
+__pycache__/
+
+# Ignore virtual environment folders
+venv/
+env/
+
+# Ignore environment files (API keys, etc.)
+.env
+
+
+# Ignore IDE/editor folders
+.vscode/
+.idea/
+
+# Optional: ignore logs
+*.log
+
+# Optional: ignore migrations (only if you don’t want to track them)
+**/migrations/
+!*/migrations/__init__.py

@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+
+<!-- ===== Top Header Strip ===== -->
+<div class="top-strip d-flex justify-content-between align-items-center px-4 shadow-sm">
+    <a href="{% url 'dashboard' %}" class="home-link d-flex align-items-center">
+        <i class="bi bi-house-door-fill me-2"></i> <span>Home</span>
+    </a>
+    <div class="d-flex align-items-center">
+        <i class="bi bi-person-circle me-2 fs-4"></i>
+        <span class="fw-semibold">{{ faculty.user.first_name }} {{ faculty.user.last_name }}</span>
+    </div>
+</div>
+
+<div class="dashboard-container d-flex">
+    <!-- ===== Sidebar ===== -->
+    <aside class="sidebar p-4">
+        <div class="text-center mb-4 profile-box p-3 shadow-sm rounded">
+            <img src="https://via.placeholder.com/130" alt="Profile"
+                 class="rounded-circle border border-3 border-primary mb-3 profile-pic">
+            <h4 class="fw-bold mb-1 text-dark">{{ faculty.user.first_name }} {{ faculty.user.last_name }}</h4>
+            <p class="small text-muted mb-1"><strong>{{ faculty.designation }}</strong></p>
+            <p class="text-secondary mb-1">{{ faculty.department }}</p>
+            <p class="text-muted small mb-1">{{ faculty.user.email }}</p>
+            <p class="text-muted small">@{{ faculty.user.username }}</p>
+        </div>
+
+        <hr class="my-3">
+
+        <nav class="nav flex-column text-start">
+    <a href="{% url 'dashboard' %}?type=project" 
+       class="nav-link {% if project_type == 'project' %}active{% endif %}">
+        <i class="bi bi-folder2-open me-2"></i> Project Fund Detail
+    </a>
+    <a href="{% url 'dashboard' %}?type=seed" 
+       class="nav-link {% if project_type == 'seed' %}active{% endif %}">
+        <i class="bi bi-lightbulb me-2"></i> Seed Grant Detail
+    </a>
+    <a href="{% url 'dashboard' %}?type=all" 
+       class="nav-link {% if project_type == 'all' %}active{% endif %}">
+        <i class="bi bi-grid me-2"></i> All Projects
+    </a>
+</nav>
+
+        <div class="mt-auto text-center mt-4">
+            <a href="{% url 'logout' %}" class="btn btn-danger w-100 fw-semibold">
+                <i class="bi bi-box-arrow-right me-1"></i> Logout
+            </a>
+        </div>
+    </aside>
+
+    <!-- ===== Main Content ===== -->
+    <main class="main-content flex-grow-1 p-5">
+        <!-- ✅ Project Fund Detail Section -->
+        {% if show_projects %}
+        <section id="projectSection">
+            <h3 class="mb-4 fw-bold text-primary border-bottom pb-2">
+                Assigned Projects
+            </h3>
+            <div class="row">
+                {% for project in projects %}
+                <div class="col-md-4 mb-4">
+                    <div class="card project-card shadow-lg border-0 h-100">
+                        <div class="card-body text-center p-4">
+                            <h5 class="card-title fw-semibold">{{ project.title }}</h5>
+                            <p class="text-muted mb-2">Project No: <strong>{{ project.project_no }}</strong></p>
+                            <a href="{% url 'project_detail' project.id %}" class="btn btn-outline-primary btn-sm mt-2">
+                                <i class="bi bi-eye-fill me-1"></i> View Details
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <p>No projects assigned.</p>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        <!-- ✅ Seed Grant Detail Section -->
+        {% if show_seed %}
+        <section id="seedSection" >
+            <h3 class="mb-4 fw-bold text-success border-bottom pb-2">
+                Seed Grant Projects
+            </h3>
+            <div class="row">
+                {% for grant in seed_projects %}
+                <div class="col-md-4 mb-4">
+                    <div class="card project-card shadow-lg border-0 h-100">
+                        <div class="card-body text-center p-4">
+                            <h5 class="card-title fw-semibold">{{ grant.title }}</h5>
+                            <p class="text-muted mb-2">Grant No: <strong>{{ grant.grant_no }}</strong></p>
+                            <a href="{% url 'bill_report_user' grant.encoded_grant_no %}" class="btn btn-outline-success btn-sm mt-2">
+                                <i class="bi bi-file-earmark-bar-graph me-1"></i> View Report
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <p>No seed grants assigned.</p>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif%}
+
+        {% if show_tdg %}
+        <section id="tdgSection">
+    <h3 class="mb-4 fw-bold text-warning border-bottom pb-2">
+        TDG Grant Projects
+    </h3>
+    <div class="row">
+        {% for tdg in tdg_projects %}
+        <div class="col-md-4 mb-4">
+            <div class="card project-card shadow-lg border-0 h-100">
+                <div class="card-body text-center p-4">
+                    <h5 class="card-title fw-semibold">{{ tdg.title }}</h5>
+                    <p class="text-muted mb-2">Grant No: <strong>{{ tdg.grant_no }}</strong></p>
+                    <a href="{% url 'bill_report_user' tdg.encoded_grant_no %}" class="btn btn-outline-warning btn-sm mt-2">
+                        <i class="bi bi-file-earmark-bar-graph me-1"></i> View Report
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <p>No TDG grants assigned.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+
+    </main>
+</div>
+
+<!-- ===== CSS Styling ===== -->
+<style>
+/* ===== Overall Page ===== */
+body {
+    margin: 0;
+    padding: 0;
+    background: #eef2f6;
+    height: 100vh;
+    overflow-x: hidden;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* ===== Header Strip ===== */
+.top-strip {
+    background: linear-gradient(90deg, #1a3b7c, #274b9f);
+    color: #fff;
+    padding: 12px 40px;
+    font-size: 18px;
+    font-weight: 600;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 10;
+}
+.top-strip .home-link {
+    color: #fff;
+    text-decoration: none;
+    transition: 0.3s;
+}
+.top-strip .home-link:hover {
+    color: #d9e4ff;
+}
+
+/* ===== Dashboard Layout ===== */
+.dashboard-container {
+    display: flex;
+    margin-top: 60px; /* sits directly under fixed header */
+    min-height: calc(100vh - 60px);
+    width: 100%;
+    padding: 0 25px;
+    box-sizing: border-box;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+    width: 280px;
+    background: #f8f9fc;
+    border-right: 2px solid #e0e4eb;
+    padding: 25px 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    border-radius: 10px;
+    height: calc(100vh - 80px);
+    margin-top: 10px;
+    position: sticky;
+    top: 70px;
+}
+.sidebar .profile-pic {
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+}
+.sidebar .profile-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+}
+.sidebar h4 {
+    color: #0b1e40;
+}
+.nav-link {
+    background: transparent;
+    border: none;
+    text-align: left;
+    padding: 12px 18px;
+    margin: 6px 0;
+    font-weight: 500;
+    color: #0b1e40;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+    font-size: 15px;
+}
+.nav-link:hover,
+.nav-link.active {
+    background: #1a3b7c;
+    color: #fff;
+}
+
+/* ===== Main Content ===== */
+.main-content {
+    flex-grow: 1;
+    margin: 15px 0 20px 25px;
+    background: #ffffff;
+    border-radius: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    padding: 40px 50px;
+    overflow-y: auto;
+}
+
+/* ===== Cards ===== */
+.project-card {
+    border-radius: 15px;
+    transition: all 0.3s ease;
+}
+.project-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 992px) {
+    .dashboard-container {
+        flex-direction: column;
+        padding: 0 10px;
+    }
+    .sidebar {
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 2px solid #e0e4eb;
+        margin-bottom: 15px;
+    }
+    .main-content {
+        margin: 10px 0;
+        padding: 20px;
+    }
+}
+</style>
+
+
+
+
+
+{% endblock %}
