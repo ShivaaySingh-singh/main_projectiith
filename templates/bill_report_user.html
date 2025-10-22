@@ -167,12 +167,11 @@
             <tr>
                 <th>S.No.</th>
                 <th>Date</th>
-                <th>Seed Grant Short No</th>
-                <th>Project/Grant No</th>
-                <th>Expenditure Head</th>
-                <th>Voucher No</th>
+                <th>Short No</th>
+                <th>Grant No</th>
+                <th>Head</th>
                 <th>Particulars</th>
-                <th>Gross Amount (₹)</th>
+                <th>Amount (₹)</th>
                 <th>Remarks</th>
             </tr>
         </thead>
@@ -180,19 +179,28 @@
             {% for exp in expenditures %}
             <tr>
                 <td>{{ forloop.counter }}</td>
-                <td>{{ exp.date }}</td>
-                <td>{{ exp.grant_no }}</td>
+                <td>{{ exp.date|date:"d-m-Y" }}</td>
+                <td>{{ exp.grant_no|default:"-" }}</td>
+                <td>{{ exp.short_no|default:"-"}}
                 <td>{{ exp.head }}</td>
-                <td>{{ exp.voucher_no }}</td>
+                
                 <td>{{ exp.particulars }}</td>
                 <td>{{ exp.amount }}</td>
-                <td>{{ exp.remarks }}</td>
+                <td>{{ exp.remarks|default:"-" }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="9">No expenditure records found.</td></tr>
+            <tr><td colspan="8">No expenditure records found.</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+
+<script>
+// Auto-refresh page every 30 seconds to show latest expenditures
+setInterval(function() {
+    location.reload();
+}, 30000); // 30000ms = 30 seconds
+</script>
 
 {% endblock %}
