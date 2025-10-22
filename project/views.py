@@ -147,13 +147,29 @@ def dashboard(request):
 
 # ✅ Helper to prepare report
 def prepare_report(project, expenditures, commitments):
-    report_rows, total_budget, total_exp, total_commit = [], 0, 0, 0
+    report_rows = [] 
+    total_budget = 0
+    total_exp = 0 
+    total_commit = 0
+    
+    HEADS =[ 
+        "Equipment", "Consumables", "Contingency", "Travel", "Manpower", "Others", "Furniture", "Visitor Expenses", "Lab Equipment"
+    ]
+
+    def normalize(text):
+        """Lowercase, strip, remove trailing 's'"""
+        text = text.strip().lower()
+        return text[:-1] if text.endswith('s') and len(text) > 1 else text
+
+            
 
     for head in HEADS:
         field_name = head.lower().replace(" ", "_")
         sanction = getattr(project, field_name, 0) or 0
-        exp_sum = sum(exp.amount for exp in expenditures if exp.head.lower() == head.lower())
-        commit_sum = sum(c.gross_amount for c in commitments if c.head.lower() == head.lower())
+
+        normalized_head = normalize(head)
+        exp_sum = sum(exp.amount for exp in expenditures if normalize(exp.head) == normalized_head)
+        commit_sum = sum(c.gross_amount for c in commitments if normalize(c.head) == normalized_head)
         balance = sanction - (exp_sum + commit_sum)
 
         total_budget += sanction

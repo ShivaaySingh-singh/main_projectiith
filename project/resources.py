@@ -119,7 +119,7 @@ class SeedGrantResource(resources.ModelResource):
     budget_year2 = fields.Field(column_name="Budget for 2nd Year", attribute="budget_year2")
     total_budget = fields.Field(column_name="Total", attribute="total_budget")
     equipment = fields.Field(column_name="Equipment", attribute="equipment", widget=ZeroIfBlankWidget() )
-    consumables = fields.Field(column_name="Consumabeles", attribute="consumables", widget=ZeroIfBlankWidget())
+    consumables = fields.Field(column_name="Consumables", attribute="consumables", widget=ZeroIfBlankWidget())
     contingency = fields.Field(column_name="Contingency", attribute="contingency", widget=ZeroIfBlankWidget())
     travel = fields.Field(column_name="Travel", attribute="travel", widget=ZeroIfBlankWidget())
     manpower = fields.Field(column_name="Manpower", attribute="manpower", widget=ZeroIfBlankWidget())
