@@ -70,14 +70,14 @@
     .fw-bold {
         font-weight: bold;
     }
+    
     @media print {
-  @page { size: A4; margin: 20mm; }
-  .form-select, .btn-print { display: none !important; }
-  .breadcrumbs, .module, #header, #container > header { display: none !important; }
-  table { page-break-inside: avoid; }
-  body { font-size: 13px; }
-}
-
+        @page { size: A4; margin: 20mm; }
+        .form-select, .btn-print { display: none !important; }
+        .breadcrumbs, .module, #header, #container > header { display: none !important; }
+        table { page-break-inside: avoid; }
+        body { font-size: 13px; }
+    }
 </style>
 
 <!-- ✅ Page Header -->
@@ -87,34 +87,31 @@
 <div class="text-center section">
     <label><strong style="font-size: 1.2rem;">Select Seed Grant Number:</strong></label><br>
     <select id="grant_select" class="form-select d-inline-block" style="max-width:300px;">
-
         <option value="">-- Select --</option>
         {% for no in all_short_nos %}
-            <option value="?grant_no={{ no }}" {% if selected_grant and selected_grant.grant_no == no %}selected{% endif %}>
+            <option value="{{ no }}" {% if selected_grant.grant_no == no %}selected{% endif %}>
                 {{ no }}
             </option>
         {% endfor %}
     </select>
+    
     <div class="text-center my-3">
-  <button type="button" onclick="printReport()" class="btn-print" 
-          style="background:#4CAF50;color:white;border:none;padding:10px 20px;
-                 border-radius:5px;cursor:pointer;font-size:1rem;">
-    🖨️ Print / Save as PDF
-  </button>
+        <button type="button" onclick="window.print()" class="btn-print" 
+                style="background:#4CAF50;color:white;border:none;padding:10px 20px;
+                       border-radius:5px;cursor:pointer;font-size:1rem;">
+            🖨️ Print / Save as PDF
+        </button>
+    </div>
 </div>
-
-</div>
-
 
 <!-- ✅ Project Info -->
 <div class="section">
     <table class="table table-bordered w-75 mx-auto">
-    <tr><th>Name</th><td class="info-name">{{ selected_grant.name|default_if_none:"" }}</td></tr>
-    <tr><th>Department</th><td class="info-dept">{{ selected_grant.dept|default_if_none:"" }}</td></tr>
-    <tr><th>Title</th><td class="info-title">{{ selected_grant.title|default_if_none:"" }}</td></tr>
-    <tr><th>Seed Grant Number</th><td class="info-grantno">{{ selected_grant.grant_no|default_if_none:"" }}</td></tr>
-</table>
-
+        <tr><th>Name</th><td id="info-name">{{ selected_grant.name|default_if_none:"" }}</td></tr>
+        <tr><th>Department</th><td id="info-dept">{{ selected_grant.dept|default_if_none:"" }}</td></tr>
+        <tr><th>Title</th><td id="info-title">{{ selected_grant.title|default_if_none:"" }}</td></tr>
+        <tr><th>Seed Grant Number</th><td id="info-grantno">{{ selected_grant.grant_no|default_if_none:"" }}</td></tr>
+    </table>
 </div>
 
 <!-- ✅ Budget Summary -->
@@ -130,9 +127,9 @@
         </thead>
         <tbody>
             <tr>
-                <td class="budget-year1">{{ selected_grant.year1_budget|default_if_none:"" }}</td>
-                <td class="budget-year2">{{ selected_grant.year2_budget|default_if_none:"" }}</td>
-                <td class="budget-total fw-bold"><strong>{{ selected_grant.total_budget|default_if_none:"" }}</strong></td>
+                <td id="budget-year1">{{ selected_grant.budget_year1|default_if_none:"" }}</td>
+                <td id="budget-year2">{{ selected_grant.budget_year2|default_if_none:"" }}</td>
+                <td id="budget-total" class="fw-bold"><strong>{{ selected_grant.total_budget|default_if_none:"" }}</strong></td>
             </tr>
         </tbody>
     </table>
@@ -141,8 +138,7 @@
 <!-- ✅ Detailed Budget Table -->
 <div class="section">
     <h4>Detailed Budget</h4>
-    <table class="table table-bordered w-100 mx-auto" id="budget-table">
-
+    <table class="table table-bordered w-100 mx-auto">
         <thead>
             <tr>
                 <th>S.No.</th>
@@ -153,23 +149,25 @@
                 <th>Balance</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="budget-table-body">
             {% for row in report_rows %}
             <tr>
                 <td>{{ forloop.counter }}</td>
-                <td>{{ row.head|default_if_none:""}}</td>
-                <td>{{ row.sanction|default_if_none:""}}</td>
+                <td>{{ row.head|default_if_none:"" }}</td>
+                <td>{{ row.sanction|default_if_none:"" }}</td>
                 <td>{{ row.expenditure|default_if_none:"" }}</td>
                 <td>{{ row.commitment|default_if_none:"" }}</td>
                 <td>{{ row.balance|default_if_none:"" }}</td>
             </tr>
+            {% empty %}
+            <tr><td colspan="6">No data available</td></tr>
             {% endfor %}
             <tr class="table-secondary fw-bold">
                 <td colspan="2">Total</td>
-                <td>{{ totals.budget|default_if_none:"" }}</td>
-                <td>{{ totals.expenditure|default_if_none:"" }}</td>
-                <td>{{ totals.commitment|default_if_none:"" }}</td>
-                <td>{{ totals.balance|default_if_none:"" }}</td>
+                <td id="total-budget">{{ totals.budget|default_if_none:"" }}</td>
+                <td id="total-exp">{{ totals.expenditure|default_if_none:"" }}</td>
+                <td id="total-commit">{{ totals.commitment|default_if_none:"" }}</td>
+                <td id="total-balance">{{ totals.balance|default_if_none:"" }}</td>
             </tr>
         </tbody>
     </table>
@@ -178,43 +176,40 @@
 <!-- ✅ Budget Footer Box -->
 <div class="section">
     <table class="table table-bordered w-50 mx-auto">
-        <tr><th>Budget</th><td>{{ totals.budget|default_if_none:"" }}</td></tr>
-        <tr><th>Expenditure</th><td>{{ totals.expenditure|default_if_none:"" }}</td></tr>
-        <tr><th>Commitment</th><td>{{ totals.commitment|default_if_none:"" }}</td></tr>
-        <tr><th>Balance</th><td><strong>{{ totals.balance|default_if_none:"" }}</strong></td></tr>
+        <tr><th>Budget</th><td id="footer-budget">{{ totals.budget|default_if_none:"" }}</td></tr>
+        <tr><th>Expenditure</th><td id="footer-exp">{{ totals.expenditure|default_if_none:"" }}</td></tr>
+        <tr><th>Commitment</th><td id="footer-commit">{{ totals.commitment|default_if_none:"" }}</td></tr>
+        <tr><th>Balance</th><td id="footer-balance"><strong>{{ totals.balance|default_if_none:"" }}</strong></td></tr>
     </table>
 </div>
 
 <!-- ✅ Expenditure Details -->
 <div class="section">
     <h4>Expenditure</h4>
-    <table class="table table-bordered w-100 mx-auto" id="expenditure-table">
-
+    <table class="table table-bordered w-100 mx-auto">
         <thead>
             <tr>
                 <th>S.No.</th>
                 <th>Date</th>
-                <th>Seed Grant Short No</th>
-                <th>Project/Grant No</th>
-                <th>Expenditure Head</th>
-                <th>Voucher No</th>
+                <th>Short No</th>
+                <th>Grant No</th>
+                <th>Head</th>
                 <th>Particulars</th>
-                <th>Gross Amount (₹)</th>
+                <th>Amount (₹)</th>
                 <th>Remarks</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="expenditure-table-body">
             {% for exp in expenditures %}
             <tr>
-                <td>{{ forloop.counter|default_if_none:"" }}</td>
-                <td>{{ exp.date|default_if_none:"" }}</td>
-                <td>{{ exp.grant_no|default_if_none:"" }}</td>
-                <td>{{ exp.head|default_if_none:"" }}</td>
-                <td>{{ exp.voucher_no|default_if_none:"" }}</td>
-                <td>{{ exp.particulars|default_if_none:"" }}</td>
-                <td>{{ exp.amount|default_if_none:"" }}</td>
-                <td>{{ exp.remarks|default_if_none:"" }}</td>
-                
+                <td>{{ forloop.counter }}</td>
+                <td>{{ exp.date|date:"d-m-Y" }}</td>
+                <td>{{ exp.short_no|default:"-" }}</td>
+                <td>{{ exp.seed_grant.grant_no|default:exp.tdg_grant.grant_no|default:"-" }}</td>
+                <td>{{ exp.head }}</td>
+                <td>{{ exp.particulars }}</td>
+                <td>{{ exp.amount }}</td>
+                <td>{{ exp.remarks|default:"-" }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="8">No expenditure records found.</td></tr>
@@ -222,6 +217,164 @@
         </tbody>
     </table>
 </div>
-<script src="{% static 'js/grant-report.js' %}"></script>
+
+<!-- ✅ Commitment Details -->
+<div class="section">
+    <h4>Commitment</h4>
+    <table class="table table-bordered w-100 mx-auto">
+        <thead>
+            <tr>
+                <th>S.No.</th>
+                <th>Date</th>
+                <th>Short No</th>
+                <th>Grant No</th>
+                <th>Head</th>
+                <th>Particulars</th>
+                <th>Gross Amount (₹)</th>
+                <th>Remarks</th>
+            </tr>
+        </thead>
+        <tbody id="commitment-table-body">
+            {% for commit in commitments %}
+            <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>{{ commit.date|date:"d-m-Y" }}</td>
+                <td>{{ commit.short_no|default:"-" }}</td>
+                <td>{{ commit.seed_grant.grant_no|default:commit.tdg_grant.grant_no|default:"-" }}</td>
+                <td>{{ commit.head }}</td>
+                <td>{{ commit.particulars }}</td>
+                <td>{{ commit.gross_amount }}</td>
+                <td>{{ commit.remarks|default:"-" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8">No commitment records found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- ✅ JavaScript to fetch data dynamically -->
+<script>
+document.getElementById('grant_select').addEventListener('change', function() {
+    const grantNo = this.value;
+    
+    if (!grantNo) {
+        // Clear all fields if no selection
+        return;
+    }
+    
+    // ✅ Show loading state (optional)
+    console.log('Fetching data for:', grantNo);
+    
+    // ✅ Fetch grant details via AJAX
+    fetch(`/get-seed-grant-details/?grant_no=${encodeURIComponent(grantNo)}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Received data:', data);
+            
+            // ✅ Update project info
+            document.getElementById('info-name').textContent = data.name || '';
+            document.getElementById('info-dept').textContent = data.dept || '';
+            document.getElementById('info-title').textContent = data.title || '';
+            document.getElementById('info-grantno').textContent = data.grant_no || '';
+            
+            // ✅ Update budget summary
+            document.getElementById('budget-year1').textContent = data.year1_budget || '';
+            document.getElementById('budget-year2').textContent = data.year2_budget || '';
+            document.getElementById('budget-total').textContent = data.total_budget || '';
+            
+            // ✅ Update detailed budget table
+            const budgetBody = document.getElementById('budget-table-body');
+            budgetBody.innerHTML = '';
+            
+            data.report_rows.forEach((row, index) => {
+                budgetBody.innerHTML += `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${row.head}</td>
+                        <td>${row.sanction}</td>
+                        <td>${row.expenditure}</td>
+                        <td>${row.commitment}</td>
+                        <td>${row.balance}</td>
+                    </tr>
+                `;
+            });
+            
+            // Add totals row
+            budgetBody.innerHTML += `
+                <tr class="table-secondary fw-bold">
+                    <td colspan="2">Total</td>
+                    <td>${data.totals.budget}</td>
+                    <td>${data.totals.expenditure}</td>
+                    <td>${data.totals.commitment}</td>
+                    <td>${data.totals.balance}</td>
+                </tr>
+            `;
+            
+            // ✅ Update footer totals
+            document.getElementById('footer-budget').textContent = data.totals.budget;
+            document.getElementById('footer-exp').textContent = data.totals.expenditure;
+            document.getElementById('footer-commit').textContent = data.totals.commitment;
+            document.getElementById('footer-balance').textContent = data.totals.balance;
+            
+            // ✅ Update expenditure table
+            const expBody = document.getElementById('expenditure-table-body');
+            expBody.innerHTML = '';
+            
+            if (data.expenditures.length === 0) {
+                expBody.innerHTML = '<tr><td colspan="8">No expenditure records found.</td></tr>';
+            } else {
+                data.expenditures.forEach((exp, index) => {
+                    const date = new Date(exp.date).toLocaleDateString('en-GB');
+                    expBody.innerHTML += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${date}</td>
+                            <td>${exp.short_no || '-'}</td>
+                            <td>${data.grant_no}</td>
+                            <td>${exp.head}</td>
+                            <td>${exp.particulars}</td>
+                            <td>${exp.amount}</td>
+                            <td>${exp.remarks || '-'}</td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            // ✅ Update commitment table
+            const commitBody = document.getElementById('commitment-table-body');
+            commitBody.innerHTML = '';
+            
+            if (data.commitments.length === 0) {
+                commitBody.innerHTML = '<tr><td colspan="8">No commitment records found.</td></tr>';
+            } else {
+                data.commitments.forEach((commit, index) => {
+                    const date = new Date(commit.date).toLocaleDateString('en-GB');
+                    commitBody.innerHTML += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${date}</td>
+                            <td>${commit.short_no || '-'}</td>
+                            <td>${data.grant_no}</td>
+                            <td>${commit.head}</td>
+                            <td>${commit.particulars || '-'}</td>
+                            <td>${commit.gross_amount}</td>
+                            <td>${commit.remarks || '-'}</td>
+                        </tr>
+                    `;
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching grant details:', error);
+            alert('Error loading grant details. Please try again.');
+        });
+});
+</script>
 
 {% endblock %}

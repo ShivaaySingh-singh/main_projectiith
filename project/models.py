@@ -198,8 +198,7 @@ class Expenditure(models.Model):
     )
 
     short_no = models.CharField(max_length=50, blank=True, null=True)
-    grant_no = models.CharField(max_length=100, blank=True, null=True)
-
+    
     head = models.CharField(max_length=100)
     particulars = models.TextField()
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -209,11 +208,20 @@ class Expenditure(models.Model):
         """Keep grant_no and short_no consistent if linked to a grant"""
         if self.seed_grant:
             self.short_no = self.seed_grant.short_no
-            self.grant_no = self.seed_grant.grant_no
+            
         elif self.tdg_grant:
             self.short_no = self.tdg_grant.short_no
-            self.grant_no = self.tdg_grant.grant_no
+            
         super().save(*args, **kwargs)
+
+    @property
+    def grant_no(self):
+        if self.seed_grant:
+            return self.seed_grant.grant_no
+        elif self.tdg_grant:
+            return self.tdg_grant.grant_no
+        return None
+
 
     def __str__(self):
         code = self.short_no or "—"
@@ -243,7 +251,7 @@ class Commitment(models.Model):
 
 
     short_no = models.CharField(max_length=50)
-    grant_no = models.CharField(max_length=100)
+    
     head = models.CharField(max_length=100)
     particulars = models.TextField()
     gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -258,6 +266,14 @@ class Commitment(models.Model):
             self.short_no = self.tdg_grant.short_no
             self.grant_no = self.tdg_grant.grant_no
         super().save(*args, **kwargs)
+
+    @property
+    def grant_no(self):
+        if self.seed_grant:
+            return self.seed_grant.grant_no
+        elif self.tdg_grant:
+            return self.tdg_grant.grant_no
+        return None
 
     def __str__(self):
         code = self.short_no or "—"

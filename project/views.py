@@ -319,8 +319,8 @@ def get_seed_grant_details(request):
 
     report_rows, totals = prepare_report(grant, expenditures_qs, commitments_qs)
 
-    expenditures = list(expenditures_qs.values("date", "head", "particulars", "amount", "remarks"))
-    commitments = list(commitments_qs.values("date", "head", "gross_amount", "remarks"))
+    expenditures = list(expenditures_qs.values("date","short_no", "head", "particulars", "amount", "remarks"))
+    commitments = list(commitments_qs.values("date", "short_no", "head", "particulars","gross_amount", "remarks"))
 
     data = {
         "name": grant.name,
