@@ -153,6 +153,7 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'  # or '/'
+LOGOUT_REDIRECT_URL = '/'
 
 AUTH_USER_MODEL = 'project.CustomUser'
 

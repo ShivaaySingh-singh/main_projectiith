@@ -127,11 +127,11 @@ def dashboard(request):
     elif project_type == "seed":
         show_projects = False
         show_seed = True
-        show_tdg = True   # ✅ show both Seed + TDG together
+        show_tdg = False   # ✅ show both Seed + TDG together
     else:
         show_projects = True
-        show_seed = True
-        show_tdg = True   # ✅ default: show everything
+        show_seed = False
+        show_tdg = False  # ✅ default: show everything
 
     return render(request, "dashboard.html", {
         "faculty": faculty,

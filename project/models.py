@@ -15,6 +15,9 @@ class Faculty(models.Model):
 
     def __str__(self):
         return self.pi_name
+    class Meta:
+        verbose_name = "Faculty Member"
+        verbose_name_plural = "Faculty Members"
     
 class Project(models.Model):
     gender = models.CharField(max_length=10, blank=True, null=True)              
@@ -44,6 +47,10 @@ class Project(models.Model):
 
     def __str__(self):
         return f"{self.project_no} - {self.project_title}"
+    
+    class Meta:
+        verbose_name = "Project"
+        verbose_name_plural = "Projects"
 
 
 class Receipt(models.Model):
@@ -67,6 +74,10 @@ class Receipt(models.Model):
 
     def __str__(self):
         return f"{self.project.project_no} - {self.reference_number}"
+    
+    class Meta:
+        verbose_name = "Receipt"
+        verbose_name_plural = "Receipts"
 
 
     
@@ -122,6 +133,10 @@ class CustomUser(AbstractUser):
         
         super().save(*args, **kwargs)
 
+    class Meta:
+        verbose_name = "user"
+        verbose_name_plural = "Users"
+
 class SeedGrant(models.Model):
     grant_no = models.CharField(max_length=100, primary_key=True)
     short_no = models.CharField(max_length=50, unique=True)
@@ -148,6 +163,11 @@ class SeedGrant(models.Model):
 
     def __str__(self):
         return f"Seed {self.grant_no} - {self.name}"
+    
+    class Meta:
+        verbose_name = "Seed Grant"
+        verbose_name_plural = "Seed Grants"
+
 class TDGGrant(models.Model):
     grant_no = models.CharField(max_length=100, primary_key=True)
     short_no = models.CharField(max_length=50, unique=True)
@@ -175,6 +195,11 @@ class TDGGrant(models.Model):
 
     def __str__(self):
         return f"TDG {self.grant_no} - {self.name}"
+    
+    class Meta:
+        verbose_name = "TDG Grant"
+        verbose_name_plural = "TDG Grants"
+    
 
 
 class Expenditure(models.Model):
@@ -226,6 +251,10 @@ class Expenditure(models.Model):
     def __str__(self):
         code = self.short_no or "—"
         return f"{code} | {self.head} | {self.amount}"
+    
+    class Meta:
+        verbose_name = "Expenditure"
+        verbose_name_plural = "Expenditures"
 
 
 # ✅ Commitment
@@ -278,6 +307,10 @@ class Commitment(models.Model):
     def __str__(self):
         code = self.short_no or "—"
         return f"{code} | {self.head} | {self.gross_amount}"
+    
+    class Meta:
+        verbose_name = "Commitment"
+        verbose_name_plural = "Commitments"
 
 
         
