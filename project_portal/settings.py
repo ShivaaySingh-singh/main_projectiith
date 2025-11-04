@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'project',
     'sheets_portal',
     'import_export',
+    'rest_framework',
     
 ]
 
@@ -141,18 +142,19 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 
-EMAIL_HOST_PASSWORD = 
+EMAIL_HOST_USER = "shivamsingh11012018@gmail.com"
+EMAIL_HOST_PASSWORD = "ivwg rmax gxjq nkbk"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'  # or '/'
+LOGOUT_REDIRECT_URL = '/'
 
 AUTH_USER_MODEL = 'project.CustomUser'
 
@@ -166,3 +168,11 @@ DATE_INPUT_FORMATS = [
     "%B %d, %Y", # October 7, 2025
 ]
  
+REST_FRAMEWORK = {
+     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
