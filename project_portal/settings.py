@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'project',
     'sheets_portal',
     'import_export',
+    'rest_framework',
     
 ]
 
@@ -167,3 +168,11 @@ DATE_INPUT_FORMATS = [
     "%B %d, %Y", # October 7, 2025
 ]
  
+REST_FRAMEWORK = {
+     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}

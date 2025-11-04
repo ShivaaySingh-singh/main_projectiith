@@ -8,6 +8,15 @@ from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
 import re
 import urllib.parse
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAdminUser
+from django.db.models import Q
+
+from .serializers import (
+    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer
+)
 
 
 HEADS = [
@@ -359,3 +368,112 @@ def get_seed_grant_details(request):
     #    return redirect('sheets_dashboard')
     #else:
      #   return redirect('home')
+
+# Generic API view
+
+class GenericModelAPIView(APIView):
+    """Generic API for GET all & POST create"""
+    permission_classes = [IsAdminUser]
+    
+    # Map model names to serializers and models
+    MODEL_CONFIG = {
+        'expenditure': (Expenditure, ExpenditureSerializer),
+        'commitment': (Commitment, CommitmentSerializer),
+        'seedgrant': (SeedGrant, SeedGrantSerializer),
+        'tdggrant': (TDGGrant, TDGGrantSerializer),
+    }
+    
+    def get_model_and_serializer(self, model_name):
+        config = self.MODEL_CONFIG.get(model_name.lower())
+        if not config:
+            return None, None
+        return config
+    
+    def get(self, request, model_name):
+        """Get all records"""
+        Model, Serializer = self.get_model_and_serializer(model_name)
+        if not Model:
+            return Response({"error": "Invalid model"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # For models with grants, use select_related
+        if model_name.lower() in ['expenditure', 'commitment']:
+            queryset = Model.objects.select_related('seed_grant', 'tdg_grant').all()
+        else:
+            queryset = Model.objects.all()
+        
+        serializer = Serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    def post(self, request, model_name):
+        """Create new record(s)"""
+        Model, Serializer = self.get_model_and_serializer(model_name)
+        if not Model:
+            return Response({"error": "Invalid model"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        is_many = isinstance(request.data, list)
+        serializer = Serializer(data=request.data, many=is_many)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GenericModelDetailAPIView(APIView):
+    """Generic API for GET one, PUT update, DELETE"""
+    permission_classes = [IsAdminUser]
+    
+    MODEL_CONFIG = GenericModelAPIView.MODEL_CONFIG
+    
+    def get_model_and_serializer(self, model_name):
+        config = self.MODEL_CONFIG.get(model_name.lower())
+        if not config:
+            return None, None
+        return config
+    
+    def get_object(self, model_name, pk):
+        Model, _ = self.get_model_and_serializer(model_name)
+        if not Model:
+            return None
+        
+        try:
+            if model_name.lower() in ['expenditure', 'commitment']:
+                return Model.objects.select_related('seed_grant', 'tdg_grant').get(pk=pk)
+            return Model.objects.get(pk=pk)
+        except Model.DoesNotExist:
+            return None
+    
+    def get(self, request, model_name, pk):
+        """Get single record"""
+        _, Serializer = self.get_model_and_serializer(model_name)
+        obj = self.get_object(model_name, pk)
+        
+        if not obj:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = Serializer(obj)
+        return Response(serializer.data)
+    
+    def put(self, request, model_name, pk):
+        """Update record"""
+        _, Serializer = self.get_model_and_serializer(model_name)
+        obj = self.get_object(model_name, pk)
+        
+        if not obj:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = Serializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, model_name, pk):
+        """Delete record"""
+        obj = self.get_object(model_name, pk)
+        
+        if not obj:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        obj.delete()
+        return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)

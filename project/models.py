@@ -3,6 +3,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.core.exceptions import ValidationError
 
 class Faculty(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
@@ -222,30 +223,37 @@ class Expenditure(models.Model):
         related_name='expenditures_tdg'
     )
 
-    short_no = models.CharField(max_length=50, blank=True, null=True)
+    
     
     head = models.CharField(max_length=100)
     particulars = models.TextField()
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remarks = models.TextField(blank=True, null=True)
-
-    def save(self, *args, **kwargs):
-        """Keep grant_no and short_no consistent if linked to a grant"""
-        if self.seed_grant:
-            self.short_no = self.seed_grant.short_no
-            
-        elif self.tdg_grant:
-            self.short_no = self.tdg_grant.short_no
-            
-        super().save(*args, **kwargs)
+    
+    def clean(self):
+        if self.seed_grant and self.tdg_grant:
+            raise ValidationError("Select only one grant type (Seed or TDG).")
+    
 
     @property
+    
     def grant_no(self):
+        """Returns grant_no from related grant"""
         if self.seed_grant:
             return self.seed_grant.grant_no
         elif self.tdg_grant:
             return self.tdg_grant.grant_no
         return None
+    
+    @property
+    def short_no(self):
+        """Returns short_no from related grant"""
+        if self.seed_grant:
+            return self.seed_grant.short_no
+        elif self.tdg_grant:
+            return self.tdg_grant.short_no
+        return None
+
 
 
     def __str__(self):
@@ -279,22 +287,14 @@ class Commitment(models.Model):
     )
 
 
-    short_no = models.CharField(max_length=50)
+    
     
     head = models.CharField(max_length=100)
     particulars = models.TextField()
     gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remarks = models.TextField(blank=True, null=True)
 
-    def save(self, *args, **kwargs):
-        """Keep grant_no and short_no consistent if linked"""
-        if self.seed_grant:
-            self.short_no = self.seed_grant.short_no
-            self.grant_no = self.seed_grant.grant_no
-        elif self.tdg_grant:
-            self.short_no = self.tdg_grant.short_no
-            self.grant_no = self.tdg_grant.grant_no
-        super().save(*args, **kwargs)
+    
 
     @property
     def grant_no(self):
@@ -302,6 +302,14 @@ class Commitment(models.Model):
             return self.seed_grant.grant_no
         elif self.tdg_grant:
             return self.tdg_grant.grant_no
+        return None
+    
+    @property
+    def short_no(self):
+        if self.seed_grant:
+            return self.seed_grant.short_no
+        elif self.tdg_grant:
+            return self.tdg_grant.short_no
         return None
 
     def __str__(self):
