@@ -224,6 +224,17 @@ class ExpenditureResource(resources.ModelResource):
         widget=FlexibleDateWidget()
      )
      
+     # Explicitly define Foreignkey fields with widget
+     seed_grant = fields.Field(
+         attribute='seed_grant',
+         widget=ForeignKeyWidget(SeedGrant, field='short_no')
+     )
+
+     tdg_grant = fields.Field(
+         attribute ='tdg_grant',
+         widget = ForeignKeyWidget(SeedGrant, field='short_no')
+     )
+
      head = fields.Field(column_name= "Expenditure Head", attribute="head")
      particulars = fields.Field(column_name="Particulars", attribute="particulars")
      amount = fields.Field(column_name="Gross Amount (in Rs.)", attribute="amount")
@@ -239,15 +250,15 @@ class ExpenditureResource(resources.ModelResource):
                 raise ValueError("Grant Short No is requiredbut missing")
             
             
-            seed = SeedGrant.objects.filter(short_no=short_no_value).first()
-            if seed:
-                row["seed_grant"] = seed
+            seed_exists = SeedGrant.objects.filter(short_no=short_no_value).first()
+            if seed_exists:
+                row["seed_grant"] = short_no_value
                 row["tdg_grant"] = None
                 return
             
-            tdg = TDGGrant.objects.filter(short_no=short_no_value).first()
-            if tdg:
-                row["tdg_grant"] = tdg
+            tdg_exists = TDGGrant.objects.filter(short_no=short_no_value).first()
+            if tdg_exists:
+                row["tdg_grant"] = short_no_value
                 row["seed_grant"] = None
                 return
            
@@ -270,20 +281,35 @@ class ExpenditureResource(resources.ModelResource):
 
 
 class CommitmentResource(resources.ModelResource):
-    
+    grant_short_no =fields.Field(
+         column_name="Grant Short No",
+         attribute="grant_short_no"
+    )
     
     date = fields.Field(
         column_name="Date",
         attribute="date",
         widget=FlexibleDateWidget()
     )
-    short_no = fields.Field(column_name="Grant Short No", attribute="short_no")
+
+    # Explicitly define Foreignkey fields with widget
+    seed_grant = fields.Field(
+         attribute='seed_grant',
+         widget=ForeignKeyWidget(SeedGrant, field='short_no')
+    )
+
+    tdg_grant = fields.Field(
+         attribute ='tdg_grant',
+         widget = ForeignKeyWidget(SeedGrant, field='short_no')
+    )
+
+    short_no = fields.Field(attribute="short_no", readonly = True)
    
     head = fields.Field(column_name="Commitment Head", attribute="head")
     particulars = fields.Field(column_name="Particulars", attribute="particulars")
     gross_amount = fields.Field(column_name="Gross Amount (in Rs.)", attribute="gross_amount")
     remarks = fields.Field(column_name="Remarks", attribute="remarks")
-    grant_no = fields.Field(column_name="Grant No", attribute="grant_no", readonly=True)
+    grant_no = fields.Field(attribute="grant_no", readonly=True)
 
     def before_import_row(self, row, **kwargs):
         short_no_value = row.get("Grant Short No", "").strip()
@@ -291,21 +317,21 @@ class CommitmentResource(resources.ModelResource):
         if not short_no_value:
             raise ValueError("Grant Short No is required but missing")
         
-        try:
-            seed = SeedGrant.objects.get(short_no=short_no_value)
-            row["seed_grant"] = seed.short_no
+        
+        seed_exists = SeedGrant.objects.get(short_no=short_no_value)
+        if seed_exists:
+            row["seed_grant"] = short_no_value
             row["tdg_grant"] = None
             return
-        except SeedGrant.DoesNotExist:
-            pass
         
-        try:
-            tdg = TDGGrant.objects.get(short_no=short_no_value)
-            row["tdg_grant"] = tdg.short_no
+        
+        
+        tdg_exists = TDGGrant.objects.get(short_no=short_no_value)
+        if tdg_exists:
+            row["tdg_grant"] = short_no_value
             row["seed_grant"] = None
             return
-        except TDGGrant.DoesNotExist:
-            pass
+        
 
         raise ValueError(f"Grant with short_no '{short_no_value}' not found!")
     
