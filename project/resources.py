@@ -1,7 +1,7 @@
 from import_export import resources, fields
 from .models import Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment
 from import_export.widgets import DateWidget, ForeignKeyWidget
-from datetime import datetime
+from datetime import datetime, date
 import xlrd
 
 
@@ -11,38 +11,68 @@ class FlexibleDateWidget(DateWidget):
     """Universal date parser for Excel + text formats across all imports."""
 
     def clean(self, value, row=None, *args, **kwargs):
-        #  Handle blanks and nulls
+        # 1️⃣ Handle empty or invalid placeholders
         if not value or str(value).strip() in ["", "None", "NULL", "NA", "-", "—"]:
             return None
 
-        #  Excel serial number (int or float)
-        try:
-            if isinstance(value, (int, float)):
-                return datetime(*xlrd.xldate_as_tuple(value, 0)).date()
-        except Exception:
-            pass
+        # 2️⃣ Handle Excel serial numbers (numeric dates)
+        if isinstance(value, (int, float)):
+            for datemode in (0, 1):  # Windows and Mac
+                try:
+                    return datetime(*xlrd.xldate_as_tuple(value, datemode)).date()
+                except Exception:
+                    continue
 
-        #  Excel-datetime object (Excel sometimes gives this directly)
+        # 3️⃣ Handle datetime/date objects directly
         if isinstance(value, datetime):
             return value.date()
+        if isinstance(value, date):
+            return value
 
-        #  Clean text (remove “midnight”, commas, extra spaces)
-        value = str(value).replace("midnight", "").replace(",", "").strip()
+        # 4️⃣ Clean up text value
+        value = str(value).strip()
+        value = (
+            value.replace("–", "-")
+                 .replace("—", "-")
+                 .replace(",", "")
+                 .replace(".", "-")  # handle 1.1.2025
+        )
 
-        # Try multiple possible formats (robust list)
+        # 5️⃣ Try common formats
         date_formats = [
-            "%d-%b-%Y", "%d/%b/%Y", "%d-%m-%Y", "%d/%m/%Y",
-            "%Y-%m-%d", "%b %d %Y", "%b. %d %Y",
-            "%d %b %Y", "%d %B %Y", "%B %d %Y"
+            "%d-%b-%Y",  # 01-Jan-2025
+            "%d-%B-%Y",  # 01-January-2025
+            "%d-%m-%Y",  # 01-01-2025
+            "%Y-%m-%d",  # 2025-01-01
+            "%d/%m/%Y",  # 01/01/2025
+            "%m/%d/%Y",  # US format
+            "%d-%b-%y",  # 01-Jan-25
+            "%d-%m-%y",  # 01-01-25
         ]
+
         for fmt in date_formats:
             try:
                 return datetime.strptime(value, fmt).date()
             except ValueError:
                 continue
 
-        # 🧱 6️⃣ If everything fails — raise clear error
-        raise ValueError(f"Invalid date format: {value}")
+        # 6️⃣ Last fallback - auto parser
+        try:
+            from dateutil import parser
+            return parser.parse(value, dayfirst=True).date()
+        except Exception:
+            pass
+
+        
+        raise ValueError(f"Invalid date format: '{value}' (rpw:{row})")
+    
+    def render(self, value, obj=None):
+        if value:
+            return value.strftime("%d-%b-%Y")
+        return ""
+
+
+       
 
 class ZeroIfBlankWidget:
     """Widget that converts blanks to zero for decimal fields"""
@@ -73,13 +103,14 @@ class ProjectResource(resources.ModelResource):
     pi_email = fields.Field(column_name="PI Email ID", attribute="pi_email")
     department = fields.Field(column_name="Department", attribute="department")
     sanction_no = fields.Field(column_name="Sanction No.", attribute="sanction_no")
-    sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date")
-    start_date = fields.Field(column_name="Start Date", attribute="start_date")
-    end_date = fields.Field(column_name="End Date", attribute="end_date")
+    sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=FlexibleDateWidget())
+    start_date = fields.Field(column_name="Start Date", attribute="start_date", widget=FlexibleDateWidget())
+    end_date = fields.Field(column_name="End Date", attribute="end_date", widget=FlexibleDateWidget())
 
     class Meta:
         model = Project
         import_id_fields = ["project_no"]
+        skip_unchnaged = True
         fields = (
             "project_no", "project_title", "pi_name", "pi_email", "faculty_id",
             "department", "sanction_no", "sanction_date",
@@ -113,10 +144,10 @@ class SeedGrantResource(resources.ModelResource):
     name = fields.Field(column_name="Name", attribute="name")
     dept = fields.Field(column_name="Dept", attribute="dept")
     title = fields.Field(column_name="Title", attribute="title")
-    sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=FlexibleDateWidget(format="%d-%b-%Y"))
-    end_date = fields.Field(column_name="End Date", attribute="end_date", widget=FlexibleDateWidget(format="%d-%b-%Y"))
-    budget_year1 = fields.Field(column_name="Budget for 1st Year", attribute="budget_year1")
-    budget_year2 = fields.Field(column_name="Budget for 2nd Year", attribute="budget_year2")
+    sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=FlexibleDateWidget())
+    end_date = fields.Field(column_name="End Date", attribute="end_date", widget=FlexibleDateWidget())
+    budget_year1 = fields.Field(column_name="Budget for 1st Year", attribute="budget_year1",widget=ZeroIfBlankWidget())
+    budget_year2 = fields.Field(column_name="Budget for 2nd Year", attribute="budget_year2", widget=ZeroIfBlankWidget())
     total_budget = fields.Field(column_name="Total", attribute="total_budget")
     equipment = fields.Field(column_name="Equipment", attribute="equipment", widget=ZeroIfBlankWidget() )
     consumables = fields.Field(column_name="Consumables", attribute="consumables", widget=ZeroIfBlankWidget())
@@ -131,6 +162,7 @@ class SeedGrantResource(resources.ModelResource):
     class Meta:
         model = SeedGrant
         import_id_fields = ["grant_no"]
+        skip_unchanged = True
         fields =(
             "grant_no", "short_no", "name", "dept", "title", "faculty_id",
             "sanction_date", "end_date", "budget_year1", "budget_year2",
@@ -140,6 +172,8 @@ class SeedGrantResource(resources.ModelResource):
 
         )
         export_order = fields
+        
+
 
 
 class TDGGrantResource(resources.ModelResource):
@@ -149,23 +183,24 @@ class TDGGrantResource(resources.ModelResource):
     name = fields.Field(column_name="Name", attribute="name")
     dept = fields.Field(column_name="Dept", attribute="dept")
     title = fields.Field(column_name="Title", attribute="title")
-    sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=DateWidget(format="%d-%b-%Y"))
-    end_date = fields.Field(column_name="End Date", attribute="end_date", widget=DateWidget(format="%d-%b-%Y"))
-    budget_year1 = fields.Field(column_name="Budget for 1st Year", attribute="budget_year1")
-    budget_year2 = fields.Field(column_name="Budget for 2nd Year", attribute="budget_year2")
-    total = fields.Field(column_name="Total", attribute="total")
-    equipment = fields.Field(column_name="Equipment", attribute="equipment")
-    consumables = fields.Field(column_name="Consumabeles", attribute="consumables")
-    travel = fields.Field(column_name="Travel", attribute="travel")
-    manpower = fields.Field(column_name="Manpower", attribute="manpower")
-    others = fields.Field(column_name="Others", attribute="others")
-    furniture = fields.Field(column_name="Furniture", attribute="furniture")
-    visitor_expenses = fields.Field(column_name="Visitor Expenses", attribute="visitor_expenses")
-    lab_equipment = fields.Field(column_name="Lab Equipment", attribute="lab_equipment")
+    sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=FlexibleDateWidget())
+    end_date = fields.Field(column_name="End Date", attribute="end_date", widget=FlexibleDateWidget())
+    budget_year1 = fields.Field(column_name="Budget for 1st Year", attribute="budget_year1", widget=ZeroIfBlankWidget())
+    budget_year2 = fields.Field(column_name="Budget for 2nd Year", attribute="budget_year2", widget=ZeroIfBlankWidget())
+    total_budget = fields.Field(column_name="Total", attribute="total_budget")
+    equipment = fields.Field(column_name="Equipment", attribute="equipment", widget=ZeroIfBlankWidget())
+    consumables = fields.Field(column_name="Consumabeles", attribute="consumables", widget=ZeroIfBlankWidget())
+    travel = fields.Field(column_name="Travel", attribute="travel", widget=ZeroIfBlankWidget())
+    manpower = fields.Field(column_name="Manpower", attribute="manpower", widget=ZeroIfBlankWidget())
+    others = fields.Field(column_name="Others", attribute="others",widget=ZeroIfBlankWidget())
+    furniture = fields.Field(column_name="Furniture", attribute="furniture", widget=ZeroIfBlankWidget())
+    visitor_expenses = fields.Field(column_name="Visitor Expenses", attribute="visitor_expenses", widget=ZeroIfBlankWidget())
+    lab_equipment = fields.Field(column_name="Lab Equipment", attribute="lab_equipment", widget=ZeroIfBlankWidget())
 
     class Meta:
         model = TDGGrant
         import_id_fields = ["grant_no"]
+        skip_unchanged = True
         fields =(
             "grant_no", "short_no", "name", "dept", "title", "faculty_id",
             "sanction_date", "end_date", "budget_year1", "budget_year2",
@@ -179,71 +214,108 @@ class TDGGrantResource(resources.ModelResource):
 
 
 class ExpenditureResource(resources.ModelResource):
-     seed_grant = fields.Field(
-        column_name="Seed Grant Short No",
-        attribute="seed_grant",
-        widget=ForeignKeyWidget(SeedGrant, "short_no")
-     )
-     tdg_grant = fields.Field(
-        column_name="TDG Grant Short No",
-        attribute="tdg_grant",
-        widget=ForeignKeyWidget(TDGGrant, "short_no")
+     grant_short_no =fields.Field(
+         column_name="Grant Short No",
+         attribute="grant_short_no"
      )
      date = fields.Field(
         column_name="Date",
         attribute="date",
-        widget=FlexibleDateWidget(format="%d-%m-%Y")
+        widget=FlexibleDateWidget()
      )
-     short_no = fields.Field(column_name="Seed grant short no", attribute="short_no")
-     grant_no = fields.Field(column_name="Project/Grant No.", attribute="grant_no")
-     head = fields.Field(column_name="Expenditure Head", attribute="head")
+     
+     head = fields.Field(column_name= "Expenditure Head", attribute="head")
      particulars = fields.Field(column_name="Particulars", attribute="particulars")
      amount = fields.Field(column_name="Gross Amount (in Rs.)", attribute="amount")
      remarks = fields.Field(column_name="Remarks", attribute="remarks")
 
+     grant_no = fields.Field( attribute="grant_no", readonly=True)
+     short_no = fields.Field(attribute="short_no", readonly=True)
+    
+     def before_import_row(self, row, **kwargs):
+            short_no_value = str(row.get("Grant Short No", "")).strip()
+
+            if not short_no_value:
+                raise ValueError("Grant Short No is requiredbut missing")
+            
+            
+            seed = SeedGrant.objects.filter(short_no=short_no_value).first()
+            if seed:
+                row["seed_grant"] = seed
+                row["tdg_grant"] = None
+                return
+            
+            tdg = TDGGrant.objects.filter(short_no=short_no_value).first()
+            if tdg:
+                row["tdg_grant"] = tdg
+                row["seed_grant"] = None
+                return
+           
+            
+
+            raise ValueError(f"Grant with Short_no '{short_no_value}' not found in Seed or TDG")
+     
      class Meta:
         model = Expenditure
         exclude = ("id",)  # don't include internal ID in Excel
         import_id_fields = []  # let Django auto-create IDs
+        skip_unchanged = True
         fields = (
             "date", "seed_grant", "tdg_grant",
             "short_no", "grant_no", "head",
             "particulars", "amount", "remarks"
         )
-        export_order = fields
+        export_order = ("date", "short_no", "grant_no", "head", "particulars", "amount", "remarks")
 
 
 
 class CommitmentResource(resources.ModelResource):
-    seed_grant = fields.Field(
-        column_name="Seed Grant Short No",
-        attribute="seed_grant",
-        widget=ForeignKeyWidget(SeedGrant, "short_no")
-    )
-    tdg_grant = fields.Field(
-        column_name="TDG Grant Short No",
-        attribute="tdg_grant",
-        widget=ForeignKeyWidget(TDGGrant, "short_no")
-    )
+    
+    
     date = fields.Field(
         column_name="Date",
         attribute="date",
-        widget=FlexibleDateWidget(format="%d-%m-%Y")
+        widget=FlexibleDateWidget()
     )
-    short_no = fields.Field(column_name="SDG Short no", attribute="short_no")
-    grant_no = fields.Field(column_name="Project/Grant No.", attribute="grant_no")
-    head = fields.Field(column_name="Expenditure Head", attribute="head")
+    short_no = fields.Field(column_name="Grant Short No", attribute="short_no")
+   
+    head = fields.Field(column_name="Commitment Head", attribute="head")
     particulars = fields.Field(column_name="Particulars", attribute="particulars")
     gross_amount = fields.Field(column_name="Gross Amount (in Rs.)", attribute="gross_amount")
     remarks = fields.Field(column_name="Remarks", attribute="remarks")
+    grant_no = fields.Field(column_name="Grant No", attribute="grant_no", readonly=True)
 
+    def before_import_row(self, row, **kwargs):
+        short_no_value = row.get("Grant Short No", "").strip()
+
+        if not short_no_value:
+            raise ValueError("Grant Short No is required but missing")
+        
+        try:
+            seed = SeedGrant.objects.get(short_no=short_no_value)
+            row["seed_grant"] = seed.short_no
+            row["tdg_grant"] = None
+            return
+        except SeedGrant.DoesNotExist:
+            pass
+        
+        try:
+            tdg = TDGGrant.objects.get(short_no=short_no_value)
+            row["tdg_grant"] = tdg.short_no
+            row["seed_grant"] = None
+            return
+        except TDGGrant.DoesNotExist:
+            pass
+
+        raise ValueError(f"Grant with short_no '{short_no_value}' not found!")
+    
     class Meta:
         model = Commitment
-        exclude = ("id",)  # don't include internal ID in Excel
+        exclude = ("id","seed_grant", "tdg_grant")  # don't include internal ID in Excel
         import_id_fields = []  # let Django auto-create IDs
         fields = (
-            "date", "seed_grant", "tdg_grant",
+            "date", 
             "short_no", "grant_no", "head",
             "particulars", "gross_amount", "remarks"
         )
-        export_order = fields
+        export_order = ("date","short_no", "grant_no", "head", "particulars", "gross_amount", "remarks")
