@@ -328,17 +328,38 @@ def get_seed_grant_details(request):
 
     report_rows, totals = prepare_report(grant, expenditures_qs, commitments_qs)
 
-    expenditures = list(expenditures_qs.values("date","short_no", "head", "particulars", "amount", "remarks"))
-    commitments = list(commitments_qs.values("date", "short_no", "head", "particulars","gross_amount", "remarks"))
+    expenditures = []
+    for exp in expenditures_qs:
+        expenditures.append({
+            "date": exp.date.isoformat(),
+            "short_no": exp.short_no,
+            "head": exp.head,
+            "particulars": exp.particulars,
+            "amount": exp.amount,
+            "remarks": exp.remarks or ""
+        })
+    
+    commitments = []
+    for commit in commitments_qs:
+        commitments.append({
+            "date": commit.date.isoformat(),
+            "short_no": commit.short_no,
+            "head" : commit.head,
+            "particulars": commit.particulars or "",
+            "gross_amount": commit.gross_amount,
+            "remarks": commit.remarks or ""
+
+        })
+
 
     data = {
         "name": grant.name,
         "dept": grant.dept,
         "title": grant.title,
         "grant_no": grant.grant_no,
-        "year1_budget": getattr(grant, "budget_year1", None),
-        "year2_budget": getattr(grant, "budget_year2", None),
-        "total_budget": getattr(grant, "total_budget", None),
+        "year1_budget": grant.budget_year1,
+        "year2_budget": grant.budget_year2,
+        "total_budget": grant.total_budget,
         "project_type": project_type,
         "report_rows": report_rows,
         "totals": totals,
