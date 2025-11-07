@@ -12,7 +12,7 @@ from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 import json  # ✅ ADD THIS - needed for JSON encoding
-
+from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant,
     Expenditure, Commitment, CustomUser
@@ -93,12 +93,17 @@ class ExcelViewMixin:
         for field in self.model._meta.fields:
             if field.name in self.excel_exclude_fields:
                 continue
+
+            if field.primary_key:
+                is_editable = isinstance(field, (models.CharField, models.TextField))
+            else:
+                is_editable = True
             
             field_config = {
                 'name': field.name,
                 'label': field.verbose_name.title(),
                 'type': field.get_internal_type(),
-                'editable': not field.primary_key,
+                'editable': is_editable,
                 'required': not field.null and not field.blank,
                 'width': self.get_field_width(field),
             }
