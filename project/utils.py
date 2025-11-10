@@ -140,5 +140,5 @@ The Team
         print(f"✅ Email sent successfully to {user.email}")
         return True
     except Exception as e:
-        print(f"❌ Error sending email: {e}")
+        print(f" Error sending email: {e}")
         return False
