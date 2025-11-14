@@ -290,6 +290,8 @@ body {
                class="sidebar-nav-link {% if project_type == 'tdg' %}active{% endif %}">
                 TDG Grant Detail
             </a>
+            <a href="{% url 'create_fund_request' %}" class="sidebar-nav-link"> Request Funds </a>
+            <a href="{% url 'request_status' %}" class="sidebar-nav-link"> Request Status </a>
         </nav>
 
         <div class="logout-btn">

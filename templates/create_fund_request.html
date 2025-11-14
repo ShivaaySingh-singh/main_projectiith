@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<style>
+.fund-request-container {
+    max-width: 900px;
+    margin: 30px auto;
+    padding: 0 20px;
+}
+
+.form-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    padding: 35px;
+}
+
+.form-header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 3px solid #28a745;
+}
+
+.form-header h2 {
+    color: #212529;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.form-header p {
+    color: #6c757d;
+    margin: 0;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 8px;
+}
+
+.form-control {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #dee2e6;
+    border-radius: 6px;
+    font-size: 15px;
+    transition: all 0.3s;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: #28a745;
+    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1);
+}
+
+.info-alert {
+    background: #d1ecf1;
+    border-left: 4px solid #17a2b8;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 25px;
+}
+
+.btn-submit {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white;
+    border: none;
+    padding: 15px 40px;
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+    width: 100%;
+}
+
+.btn-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+}
+
+.btn-cancel {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 15px 40px;
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    width: 100%;
+    text-align: center;
+    margin-top: 10px;
+}
+
+.btn-cancel:hover {
+    background: #5a6268;
+    color: white;
+}
+
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<div class="fund-request-container">
+    <div class="form-card">
+        <div class="form-header">
+            <h2> Fund Request Form</h2>
+            <p>Submit your fund request for project expenses</p>
+        </div>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }}" style="padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+       <form method="post">
+            {% csrf_token %}
+
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label>Faculty Name</label>
+                    {{ form.faculty_name }}
+                </div>
+                <div class="col-md-6">
+                    <label>Faculty ID</label>
+                    <input type="text" value="{{ user.faculty.faculty_id }}" class="form-control" readonly>
+                </div>
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label>Project Type</label>
+                    {{ form.project_type }}
+                </div>
+                <div class="col-md-6">
+                    <label>Select Project/Grant</label>
+                    {{ form.project_selection }}
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label>Short No.</label>
+                {{ form.short_no }}
+            </div>
+            <div class="mb-3">
+                <label>Expense Head</label>
+                {{ form.head }}
+            </div>
+            <div class="mb-3">
+                <label>Particulars</label>
+                {{ form.particulars }}
+            </div>
+            <div class="mb-3">
+                <label>Amount (₹)</label>
+                {{ form.amount }}
+            </div>
+
+            <button type="submit" class="btn btn-success w-100">Submit Request</button>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('id_project_type').addEventListener('change', function() {
+    const type = this.value;
+    const projectSelect = document.getElementById('id_project_selection');
+    projectSelect.innerHTML = '<option value="">Loading...</option>';
+
+    fetch(`/fund-request/get-projects/?type=${type}`)
+        .then(res => res.json())
+        .then(data => {
+            projectSelect.innerHTML = '<option value="">Select Project/Grant</option>';
+            data.projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.text;
+                projectSelect.appendChild(opt);
+            });
+        })
+        .catch(err => console.error('Fetch Error:', err));
+});
+</script>
+
+
+{% endblock %}

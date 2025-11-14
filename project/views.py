@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponseRedirect, JsonResponse
 from django.core.serializers.json import DjangoJSONEncoder
-from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment
+from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest
 from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
 import re
@@ -13,9 +13,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser
 from django.db.models import Q
+from .forms import FundRequestForm, AdminRemarkForm
 
 from .serializers import (
-    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer
+    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer
 )
 
 
@@ -402,6 +403,7 @@ class GenericModelAPIView(APIView):
         'commitment': (Commitment, CommitmentSerializer),
         'seedgrant': (SeedGrant, SeedGrantSerializer),
         'tdggrant': (TDGGrant, TDGGrantSerializer),
+        'fundrequest': (FundRequest, FundRequestSerializer),
     }
     
     def get_model_and_serializer(self, model_name):
@@ -498,3 +500,102 @@ class GenericModelDetailAPIView(APIView):
         
         obj.delete()
         return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+    
+
+
+#Form view for requsting fund
+# Get available projects for user (AJAX)
+
+@login_required
+def get_projects_by_type(request):
+    project_type = request.GET.get('type')
+    faculty_id = getattr(request.user.faculty, 'faculty_id', None)
+
+    projects = []
+    if project_type == 'project':
+        qs = Project.objects.filter(faculty_id=faculty_id)
+        projects = [{'id': f'project_{p.id}', 'text': p.project_no} for p in qs]
+    elif project_type == 'seed':
+        qs = SeedGrant.objects.filter(faculty_id=faculty_id)
+        projects = [{'id': f'seed_{s.grant_no}', 'text': s.grant_no} for s in qs]
+    elif project_type == 'tdg':
+        qs = TDGGrant.objects.filter(faculty_id=faculty_id)
+        projects = [{'id': f'tdg_{t.grant_no}', 'text': t.grant_no} for t in qs]
+
+    return JsonResponse({'projects': projects})
+
+
+# Create Fund Request
+@login_required
+def create_fund_request(request):
+    if request.method == 'POST':
+        form = FundRequestForm(request.POST, user=request.user)
+
+        # Get project_selection from POST data
+        project_selection = request.POST.get('project_selection', '').strip()
+        if not project_selection:
+            messages.error(request, "Please select a project or grant before submitting.")
+            return render(request, 'create_fund_request.html', {'form': form})
+
+        # Split and assign before validation
+        type_prefix, identifier = project_selection.split('_', 1)
+
+        # Assign correct related field to form.instance
+        if type_prefix == 'project':
+            project = Project.objects.filter(id=identifier).first()
+            if project:
+                form.instance.project = project
+
+        elif type_prefix == 'seed':
+            seed = SeedGrant.objects.filter(grant_no=identifier).first()
+            if seed:
+                form.instance.seed_grant = seed
+
+        elif type_prefix == 'tdg':
+            tdg = TDGGrant.objects.filter(grant_no=identifier).first()
+            if tdg:
+                form.instance.tdg_grant = tdg
+
+        # Now validate the form (clean() will pass)
+        if form.is_valid():
+            fund_request = form.save(commit=False)
+            fund_request.faculty = request.user
+
+            # assign project info for display
+            if type_prefix == 'project' and project: 
+                fund_request.project_no = project.project_no
+                fund_request.project_title = project.project_title
+            elif type_prefix == 'seed' and seed:
+                fund_request.project_no = seed.grant_no
+                fund_request.project_title = seed.title
+            elif type_prefix == 'tdg' and tdg:
+                fund_request.project_no = tdg.grant_no
+                fund_request.project_title = tdg.title
+
+            fund_request.save()
+            messages.success(request, "✅ Fund request submitted successfully!")
+            return redirect('dashboard')
+
+        else:
+            messages.error(request, f"Form Error: {form.errors}")
+    else:
+        form = FundRequestForm(user=request.user)
+
+    return render(request, 'create_fund_request.html', {'form': form})
+
+
+# View Request Status (Faculty)
+@login_required
+def request_status(request):
+    requests = FundRequest.objects.filter(faculty=request.user).order_by('-request_date')
+    
+    context = {
+        'requests': requests,
+        'total_requests': requests.count(),
+        'pending_count': requests.filter(status='pending').count(),
+        'approved_count': requests.filter(status='approved').count(),
+        'rejected_count': requests.filter(status='rejected').count(),
+    }
+    return render(request, 'request_status.html', context)
+
+

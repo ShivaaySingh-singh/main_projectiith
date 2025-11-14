@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Expenditure, Commitment, SeedGrant, TDGGrant
+from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest
 
 # ✅ Base Serializer with Grant Support
 class GrantRelatedSerializer(serializers.ModelSerializer):
@@ -86,3 +86,66 @@ class TDGGrantSerializer(serializers.ModelSerializer):
     class Meta:
         model = TDGGrant
         fields = '__all__'
+
+class FundRequestSerializer(serializers.ModelSerializer):
+    faculty_username = serializers.CharField(source='faculty.username', read_only=True)
+    project_type = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FundRequest
+        fields = [
+            'id', 
+            'faculty', 
+            'faculty_username',
+            'faculty_name', 
+            'faculty_id',
+            'project', 
+            'seed_grant', 
+            'tdg_grant',
+            'project_type',
+            'project_no', 
+            'project_title', 
+            'short_no',
+            'head', 
+            'particulars', 
+            'amount',
+            'status', 
+            'remarks_by_src',
+            'request_date', 
+            'updated_date'
+        ]
+
+        read_only_fields = [
+            'faculty', 
+            'faculty_name', 
+            'faculty_id',
+            'project', 
+            'seed_grant', 
+            'tdg_grant',
+            'project_no', 
+            'project_title', 
+            'short_no',
+            'head', 
+            'particulars', 
+            'amount',
+            'request_date', 
+            'updated_date'
+        ]
+
+    def get_project_type(self, obj):
+            """Determine project type for display"""
+            if obj.project:
+               return 'Project'
+            elif obj.seed_grant:
+               return 'Seed Grant'
+            elif obj.tdg_grant:
+               return 'TDG Grant'
+            return 'N/A'
+
+    def validate_status(self, value):
+            """Validate status choices"""
+            valid_statuses = ['pending', 'approved', 'rejected']
+            if value not in valid_statuses:
+                raise serializers.ValidationError(f"Status must be one of: {', '.join(valid_statuses)}")
+            return value
+        

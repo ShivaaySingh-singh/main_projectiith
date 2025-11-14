@@ -319,7 +319,70 @@ class Commitment(models.Model):
     class Meta:
         verbose_name = "Commitment"
         verbose_name_plural = "Commitments"
+  
+class FundRequest(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
 
+    request_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
 
+    faculty = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE, related_name='fund_requests')
+    faculty_name = models.CharField(max_length=200)
+    
+
+    #roject selection - can be Project, seedGrant , or TDGGrant
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, null=True, blank=True, related_name='fund_requests'
+    )
+
+    seed_grant = models.ForeignKey(
+        SeedGrant,
+        on_delete=models.CASCADE,
+        null= True,
+        blank = True,
+        related_name='fund_requests'
+    )
+
+    tdg_grant = models.ForeignKey(
+        TDGGrant,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='fund_requests'
+    )
+
+    project_no = models.CharField(max_length=100)
+    grant_no = models.CharField(max_length=100, blank=True, null=True)
+    short_no = models.CharField(max_length=100)
+    project_title = models.CharField(max_length=500)
+
+    head = models.CharField(max_length=200, help_text="Expense head/category")
+    particulars = models.TextField(help_text="Details of expense")
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    remarks_by_src = models.TextField(blank=True, null=True, verbose_name="Remarks by SRC")
+
+    class Meta:
+        ordering = ['-request_date']
+        verbose_name = "Fund Request"
+        verbose_name_plural = "Fund Requests"
+
+    def __str__(self):
+        return f"{self.faculty_name} - {self.project_no} - {self.status}"
+    
+    def clean(self):
+        selected = sum([
+            bool(self.project),
+            bool(self.seed_grant),
+            bool(self.tdg_grant)
+        ])
+        if selected != 1:
+            raise ValidationError("please select exactly one project/grant type.")
         
 

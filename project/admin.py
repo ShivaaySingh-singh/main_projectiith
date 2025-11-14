@@ -15,7 +15,7 @@ import json  # ✅ ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant,
-    Expenditure, Commitment, CustomUser
+    Expenditure, Commitment, CustomUser, FundRequest
 )
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
@@ -155,6 +155,8 @@ class CustomAdminSite(admin.AdminSite):
             'Seed Grant': ['SeedGrant', 'TDGGrant', 'Expenditure', 'Commitment'],
             'Project Master': ['Project', 'Receipt'],
             'User Management': ['CustomUser', 'Faculty'],
+            'Fund Request': ['FundRequest'],
+           
         }
 
         app_dict = self._build_app_dict(request, app_label)
@@ -430,3 +432,103 @@ custom_admin_site.register(Receipt, ReceiptAdmin)
 # 👥 User Management Group
 custom_admin_site.register(CustomUser, CustomUserAdmin)
 custom_admin_site.register(Faculty)
+
+# admin.py - WORKING VERSION
+
+from .models import FundRequest
+
+
+class FundRequestAdmin(ExcelViewMixin, admin.ModelAdmin):
+    list_display = [
+        'faculty_name', 
+        'faculty_id',
+        'request_date', 
+        'project_no', 
+        'short_no', 
+        'head',
+        'amount', 
+        'status', 
+        'updated_date'
+    ]
+    
+    list_filter = ['status', 'request_date', 'head']
+    
+    search_fields = [
+        'faculty_name', 
+        'faculty_id', 
+        'project_no', 
+        'short_no',
+        'project_title'
+    ]
+    
+    
+    fieldsets = (
+        ('Faculty Information', {
+            'fields': ('faculty', 'faculty_name', 'faculty_id')
+        }),
+        ('Project Details', {
+            'fields': (
+                'project', 'seed_grant', 'tdg_grant',
+                'project_no', 'grant_no', 'project_title', 'short_no'
+            )
+        }),
+        ('Expense Details', {
+            'fields': ('head', 'particulars', 'amount')
+        }),
+        ('Status & Approval', {
+            'fields': ('status', 'remarks_by_src', 'request_date', 'updated_date'),
+            'classes': ('wide',)
+        }),
+    )
+    
+    ordering = ['-request_date']
+    
+    date_hierarchy = 'request_date'
+
+    excel_exclude_fields = ['id', 'faculty', 'project', 'seed_grant', 'tdg_grant', 'grant_no']
+    
+    # Make it easier to approve/reject in bulk
+    actions = ['approve_requests', 'reject_requests']
+
+    def get_excel_fields_config(self):
+        """Override to make specific fields read-only in Excel View"""
+        fields = super().get_excel_fields_config()
+
+        editable_fields = ['status', 'remarks_by_src']
+
+        for field in fields:
+            if field['name'] not in editable_fields:
+                field['editable'] = False
+        return fields
+    
+    def has_add_permission(self, request):
+        return False # Disables Add Row Button
+    
+    def has_delete_permission(self,request, obj=None):
+        return False
+
+    
+    def approve_requests(self, request, queryset):
+        updated = queryset.update(status='approved')
+        self.message_user(request, f'{updated} request(s) approved successfully.')
+    approve_requests.short_description = "Approve selected requests"
+    
+    def reject_requests(self, request, queryset):
+        updated = queryset.update(status='rejected')
+        self.message_user(request, f'{updated} request(s) rejected.')
+    reject_requests.short_description = "Reject selected requests"
+
+    def get_excel_context_data(self):
+        """
+        Provide dropdown options for Excel View
+        - Status choices
+        - Head options
+        """
+        return {
+            'status_choices': json.dumps(['pending', 'approved', 'rejected']),
+            'heads': json.dumps(HEADS),
+            'is_fund_request': True,
+        }
+
+
+custom_admin_site.register(FundRequest, FundRequestAdmin)

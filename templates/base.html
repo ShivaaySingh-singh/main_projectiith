@@ -83,11 +83,11 @@
         /* ===== Main Content ===== */
         .content {
             flex: 1;
-            padding: 50px 25px;
+            padding: 0;
         }
 
         .content-card {
-            background: #FFFFE0;
+            background: #6fb3d3ff;
             border-radius: 15px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
             padding: 40px;
@@ -112,6 +112,11 @@
             border-top: 1px solid #e6e6e6;
             box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.05);
         }
+        
+
+        
+      
+        
 
         /* ===== Responsive ===== */
         @media (max-width: 768px) {
@@ -152,13 +157,13 @@
 
         <div class="d-flex align-items-center gap-3">
     <!-- ✅ Show Sheets Portal button only on homepage -->
-    {% if request.path == '/' %}
+    <!--{% if request.path == '/' %}
         <a href="{% url 'login' %}?next=/sheets/dashboard/" 
            class="btn btn-outline-dark btn-sm fw-semibold"
            style="border-radius:8px;">
             <i class="bi bi-file-spreadsheet"></i> Sheets Portal
         </a>
-    {% endif %}
+    {% endif %} -->
 
             <!-- Admin Login Icon -->
             <a href="/admin/" title="Admin Login">
@@ -174,10 +179,10 @@
 
     <!-- ===== Main Content ===== -->
     <div class="content">
-        <div class="content-card">
+        
             {% block content %}
             {% endblock %}
-        </div>
+        
     </div>
 
     <!-- ===== Footer ===== -->
