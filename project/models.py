@@ -4,6 +4,16 @@ from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
+from datetime import date 
+from django.core.validators import MinValueValidator
+import re
+
+
+def validate_positive_amount(value):
+        """Ensure amount is positive and numeric only"""
+        if value < 0:
+            raise ValidationError('Amount cannot be negative. Only positive values are allowed.')
+        return value
 
 class Faculty(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
@@ -21,39 +31,244 @@ class Faculty(models.Model):
         verbose_name_plural = "Faculty Members"
     
 class Project(models.Model):
-    gender = models.CharField(max_length=10, blank=True, null=True)              
-    type_of_project = models.CharField(max_length=100, blank=True, null=True)    
-    project_no = models.CharField(max_length=100, unique=True)                   
-    short_no = models.CharField(max_length=50, blank=True, null=True)            
-    project_year = models.CharField(max_length=10, blank=True, null=True)        
-
-    faculty_id = models.CharField(max_length=50, blank=False, null=False)          
-    pi_name = models.CharField(max_length=255, blank=True, null=True)            
-    pi_email = models.EmailField(blank=True, null=True)                          
-
-    agency = models.CharField(max_length=255, blank=True, null=True)             
-    department = models.CharField(max_length=255, blank=True, null=True)         
-    project_title = models.CharField(max_length=500, blank=True, null=True)      
-    duration = models.CharField(max_length=50, blank=True, null=True)            
-    start_date = models.DateField(blank=True, null=True)                         
-    end_date = models.DateField(blank=True, null=True)                           
-
-    sponsoring_agency = models.CharField(max_length=255, blank=True, null=True)  
-    sanction_no = models.CharField(max_length=100, blank=True, null=True)        
-    sanction_date = models.DateField(blank=True, null=True)                      
-
-    amount_to_be_received = models.FloatField(default=0)                         
-    total_non_recurring = models.FloatField(default=0)                           
-    total_recurring = models.FloatField(default=0)                               
-
-    def __str__(self):
-        return f"{self.project_no} - {self.project_title}"
+    GENDER_CHOICES = [
+        ('M', 'Male'),
+        ('F', 'Female'),
+        ('O', 'Other'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('ONGOING', 'Ongoing'),
+        ('CLOSED', 'Closed'),
+    ]
+    
+    
+    
+    # Primary and Unique Fields
+    project_short_no = models.CharField(
+        max_length=50, 
+        primary_key=True,
+        verbose_name="Project Short No."
+    )
+    project_no = models.CharField(
+        max_length=100, 
+        unique=True,
+        verbose_name="Project No."
+    )
+    
+    # Basic Information
+    gender = models.CharField(
+        max_length=1, 
+        choices=GENDER_CHOICES,
+        verbose_name="Gender",
+        
+    )
+    project_type = models.CharField(
+        max_length=100,
+        verbose_name="Project Type",
+        
+    )
+    
+    # Faculty and Personnel Information
+    faculty_id = models.CharField(
+        max_length=50,
+        verbose_name="Faculty ID",
+        
+    )
+    pi_name = models.CharField(
+        max_length=200,
+        verbose_name="PI Name",
+        
+    )
+    co_pi_name = models.CharField(
+        max_length=200, 
+        blank=True, 
+        null=True,
+        verbose_name="Co-PI Name"
+    )
+    pi_email = models.EmailField(
+        verbose_name="PI Email ID",
+        
+    )
+    department = models.CharField(
+        max_length=200,
+        verbose_name="Department",
+        
+    )
+    
+    # Project Details
+    project_title = models.TextField(
+        verbose_name="Project Title",
+        
+    )
+    
+    # Sponsoring Agency Details
+    gst_no = models.CharField(
+        max_length=15, 
+        blank=True, 
+        null=True,
+        verbose_name="GST No."
+    )
+    address_sponsoring_agency = models.TextField(
+        blank=True, 
+        null=True,
+        verbose_name="Address of Sponsoring Agency"
+    )
+    pincode = models.CharField(
+        max_length=10, 
+        blank=True, 
+        null=True,
+        verbose_name="Pincode"
+    )
+    sponsoring_agency = models.CharField(
+        max_length=300,
+        verbose_name="Sponsoring Agency"
+    )
+    country = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True,
+        verbose_name="Country"
+    )
+    
+    # Duration and Dates
+    duration = models.CharField(
+        max_length=100,
+        verbose_name="Duration"
+    )
+    project_start_date = models.DateField(
+        verbose_name="Project Start Date",
+        
+    )
+    project_end_date = models.DateField(
+        verbose_name="Project End Date",
+        
+    )
+    project_status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='ONGOING',
+        verbose_name="Project Status"
+    )
+    
+    # Fellow/Student Information
+    fellow_student_name = models.CharField(
+        max_length=200, 
+        blank=True, 
+        null=True,
+        verbose_name="Fellow/Student Name"
+    )
+    
+    # Scheme Information
+    scheme_code = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True,
+        verbose_name="Scheme Code"
+    )
+    scheme_name = models.CharField(
+        max_length=300, 
+        blank=True, 
+        null=True,
+        verbose_name="Scheme Name"
+    )
+    
+    # Sanction Details
+    sanction_number = models.CharField(
+        max_length=200, 
+        blank=True, 
+        null=True,
+        verbose_name="Sanction Number/MOU/Agreement"
+    )
+    sanction_date = models.DateField(
+        verbose_name="Sanction Date",
+        
+    )
+    sanction_amount = models.DecimalField(
+        max_digits=15, 
+        decimal_places=2,
+        validators=[MinValueValidator(0), validate_positive_amount],
+        verbose_name="Sanction Amount",
+        
+    )
+    
+    # Financial Details
+    amount_to_be_received = models.DecimalField(
+        max_digits=15, 
+        decimal_places=2,
+        validators=[MinValueValidator(0), validate_positive_amount],
+        verbose_name="Amount to be Received by Sponsoring Agency",
+        
+    )
+    total_non_recurring = models.DecimalField(
+        max_digits=15, 
+        decimal_places=2,
+        validators=[MinValueValidator(0), validate_positive_amount],
+        verbose_name="Total Non-Recurring",
+        
+    )
+    total_recurring = models.DecimalField(
+        max_digits=15, 
+        decimal_places=2,
+        validators=[MinValueValidator(0), validate_positive_amount],
+        verbose_name="Total Recurring",
+        
+    )
+    
+    # Bank Details
+    bank_name_account = models.CharField(
+        max_length=300, 
+        blank=True, 
+        null=True,
+        verbose_name="Bank Name & A/C No."
+    )
+    
+    # Additional Information
+    remarks = models.TextField(
+        blank=True, 
+        null=True,
+        verbose_name="Remarks"
+    )
     
     class Meta:
-        verbose_name = "Project"
-        verbose_name_plural = "Projects"
-
-
+        db_table = 'projects'
+        verbose_name = 'Project'
+        verbose_name_plural = 'Projects'
+        ordering = ['-project_start_date']
+    
+    def clean(self):
+        """Additional validation for amount fields"""
+        super().clean()
+        
+        # Validate all amount fields
+        amount_fields = [
+            ('sanction_amount', self.sanction_amount),
+            ('amount_to_be_received', self.amount_to_be_received),
+            ('total_non_recurring', self.total_non_recurring),
+            ('total_recurring', self.total_recurring),
+        ]
+        
+        for field_name, value in amount_fields:
+            if value is not None and value < 0:
+                raise ValidationError({
+                    field_name: 'Only positive amounts are allowed. Negative values are not permitted.'
+                })
+    
+    def save(self, *args, **kwargs):
+        # Run full validation before saving
+        self.full_clean()
+        
+        # Auto-update project status based on end date
+        if self.project_end_date:
+            today = date.today()
+            if self.project_end_date < today:
+                self.project_status = 'CLOSED'
+            else:
+                self.project_status = 'ONGOING'
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.project_short_no} - {self.project_title}"
 class Receipt(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="receipts")
     receipt_date = models.DateField(blank=True, null=True)                       

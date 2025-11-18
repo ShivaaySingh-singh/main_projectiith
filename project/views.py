@@ -16,7 +16,7 @@ from django.db.models import Q
 from .forms import FundRequestForm, AdminRemarkForm
 
 from .serializers import (
-    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer
+    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer,ProjectSerializer
 )
 
 
@@ -404,6 +404,7 @@ class GenericModelAPIView(APIView):
         'seedgrant': (SeedGrant, SeedGrantSerializer),
         'tdggrant': (TDGGrant, TDGGrantSerializer),
         'fundrequest': (FundRequest, FundRequestSerializer),
+        'project':(Project, ProjectSerializer)
     }
     
     def get_model_and_serializer(self, model_name):

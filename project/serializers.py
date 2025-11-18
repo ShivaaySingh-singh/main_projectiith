@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest
+from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project
 
 # ✅ Base Serializer with Grant Support
 class GrantRelatedSerializer(serializers.ModelSerializer):
@@ -85,6 +85,11 @@ class SeedGrantSerializer(serializers.ModelSerializer):
 class TDGGrantSerializer(serializers.ModelSerializer):
     class Meta:
         model = TDGGrant
+        fields = '__all__'
+
+class ProjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
         fields = '__all__'
 
 class FundRequestSerializer(serializers.ModelSerializer):

@@ -358,6 +358,22 @@ class TDGGrantAdmin(ExcelViewMixin, ImportExportModelAdmin):
     list_display = ("grant_no", "short_no", "name", "dept", "total_budget")
     search_fields = ("grant_no", "short_no", "name")
 
+class ProjectAdmin(ExcelViewMixin, ImportExportModelAdmin):
+    resource_class = ProjectResource
+    list_display = (
+        'project_short_no',
+        'project_no',
+        'pi_name',
+        'project_title',
+        'project_start_date',
+        'project_end_date',
+        'project_status',
+        'sanction_amount',
+    )
+    search_fields = ('project_short_no', 'project_no', 'pi_name', 'project_title')
+    list_filter = ('project_status', 'gender', 'project_type', 'department')
+    readonly_fields = ('project_status',)
+
 
 # ✅ Models with Grant Relations (Need extra configuration)
 class ExpenditureAdmin(ExcelViewMixin, ImportExportModelAdmin):
