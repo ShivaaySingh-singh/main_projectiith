@@ -416,7 +416,75 @@ class TDGGrant(models.Model):
         verbose_name = "TDG Grant"
         verbose_name_plural = "TDG Grants"
     
+class BillInward(models.Model):
+    BILL_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processed', 'Processed'),
+        ('returned', 'Returned'),
+    ]
+     
+    date = models.DateField(verbose_name="Date")
+    received_from = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True,
+        verbose_name="Name of Person / Received From"
+    )
+    faculty = models.ForeignKey(
+        'Faculty',  # Links to Faculty model
+        on_delete=models.PROTECT,  # Prevents deleting faculty if bills exist
+        related_name='inward_bills',
+        verbose_name="Faculty",
+        to_field='faculty_id',  
+    )
 
+    faculty_name = models.CharField(
+        max_length=255,
+        verbose_name="Name of the Considered Faculty",
+        blank=True,
+        help_text="Auto-filled from Faculty table"
+    )
+    project_no = models.CharField(max_length=100,blank=True,null=True,verbose_name="Project No.")
+    particulars = models.TextField(verbose_name="Particulars")
+    amount = models.DecimalField(max_digits=12,decimal_places=2,verbose_name="Amount (in Rs.)")
+    under_head = models.CharField(max_length=100,blank=True,null=True,verbose_name="Under Head")
+    po_no = models.CharField(max_length=100,blank=True,null=True,verbose_name="PO No.")
+    # Assignment & Status
+    whom_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                limit_choices_to={'role': 'admin'}, related_name='assigned_bills',
+                                verbose_name="Assigned To (Admin Member)")
+    
+    outward_date = models.DateField(blank=True,null=True,verbose_name="Outward Date")
+    
+    bill_status = models.CharField(max_length=20,choices=BILL_STATUS_CHOICES,default='pending',verbose_name="Bill Status")
+
+    remarks = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Remarks")
+    
+    class Meta:
+        verbose_name = "Bill Inward"
+        verbose_name_plural = "Bill Inwards"
+        ordering = ['-date', '-id']
+        indexes = [
+            models.Index(fields=['faculty']),
+            models.Index(fields=['whom_to']),
+            models.Index(fields=['bill_status']),
+        ]
+    def __str__(self):
+        return f"{self.faculty_name or self.faculty.name} - {self.date} - Rs.{self.amount}"
+    
+    def save(self, *args, **kwargs):
+        """Auto-fill faculty_name from Faculty FK on save"""
+        if self.faculty and not self.faculty_name:
+            self.faculty_name = self.faculty.pi_name
+        super().save(*args, **kwargs)
+    
+    @property
+    def faculty_id_display(self):
+        """Access faculty ID through FK"""
+        return self.faculty.faculty_id if self.faculty else ""
 
 class Expenditure(models.Model):
     id = models.AutoField(primary_key=True)

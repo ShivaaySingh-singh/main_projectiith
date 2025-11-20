@@ -298,6 +298,7 @@
 
 <script>
     const MODEL_NAME = "{{ model_name }}";
+    const ADMIN_USERS = {{ admin_users|safe }};
     const API_URL = `/api/${MODEL_NAME}/`;
     const FIELDS_CONFIG = {{ fields_config|safe }};
     const HAS_GRANTS = {{ has_grants|lower }};
@@ -448,6 +449,21 @@
                 width: field.width || 150,
                 editable: field.editable,
             };
+
+            if(field.name === "whom_to") {
+                colDef.cellEditor = "agSelectCellEditor";
+                colDef.cellEditorParams = {
+                    values: ADMIN_USERS.map(u => String(u.id))
+                };
+
+                colDef.valueFormatter = params => {
+                    const user = ADMIN_USERS.find(u => String(u.id) === String(params.value))
+                    return user ? user.name : "";
+                };
+
+                colDef.valueParser = params => parseInt(params.newValue);
+
+            }
             
             if (field.type === 'DateField') {
                 colDef.cellEditor = 'agDateStringCellEditor';

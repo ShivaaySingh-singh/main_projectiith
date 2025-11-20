@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project
+from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project,BillInward,Faculty
 
 # ✅ Base Serializer with Grant Support
 class GrantRelatedSerializer(serializers.ModelSerializer):
@@ -153,4 +153,29 @@ class FundRequestSerializer(serializers.ModelSerializer):
             if value not in valid_statuses:
                 raise serializers.ValidationError(f"Status must be one of: {', '.join(valid_statuses)}")
             return value
-        
+    
+class BillInwardSerializer(serializers.ModelSerializer):
+     
+    
+    
+    # Optional: Display fields for better UI (read-only)
+    faculty_id_display = serializers.CharField(source='faculty.faculty_id',  read_only=True, required=False)
+    
+    
+    assigned_to_name = serializers.SerializerMethodField(read_only=True)
+    
+    status_display = serializers.CharField(
+        source='get_bill_status_display',
+        read_only=True
+    )
+    
+    class Meta:
+        model = BillInward
+        fields = '__all__'
+    
+    def get_assigned_to_name(self, obj):
+        """Show assigned admin member name"""
+        if obj.whom_to:
+            return obj.whom_to.get_full_name() or obj.whom_to.username
+        return None
+            

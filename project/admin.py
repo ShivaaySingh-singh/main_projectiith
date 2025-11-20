@@ -6,16 +6,19 @@ from import_export.admin import ImportExportModelAdmin
 from .views import bill_report_admin
 from django import forms
 from .models import CustomUser, Faculty
+from django.contrib.auth.models import Group
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
+from django.utils.html import format_html
+
 import json  # ✅ ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant,
-    Expenditure, Commitment, CustomUser, FundRequest
+    Expenditure, Commitment, CustomUser, FundRequest, BillInward
 )
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
@@ -154,8 +157,9 @@ class CustomAdminSite(admin.AdminSite):
         custom_groups = {
             'Seed Grant': ['SeedGrant', 'TDGGrant', 'Expenditure', 'Commitment'],
             'Project Master': ['Project', 'Receipt'],
-            'User Management': ['CustomUser', 'Faculty'],
+            'User Management': ['CustomUser', 'Faculty', 'Group'],
             'Fund Request': ['FundRequest'],
+            'Inward' : ['BillInward'],
            
         }
 
@@ -285,12 +289,21 @@ class FacultyInline(admin.StackedInline):
 class CustomUserAdmin(BaseUserAdmin):
     add_form = CustomUserCreationForm
     inlines = (FacultyInline,)
-    exclude = ("groups", "user_permissions",)
+    #exclude = ("groups", "user_permissions",)  you can uncomment this if you dont want to seee groups and ser permssion
 
     fieldsets = (
         (None, {"fields": ("username", "email", "password")}),
         (("Personal info"), {"fields": ("first_name", "last_name")}),
         (("Role"), {"fields": ("role",)}),
+        (("Permissions"), {
+            "fields": (
+                "is_active",
+                "is_staff",
+                "is_superuser",
+                "groups",           # ✅ Group assignment
+                "user_permissions",  # ✅ Individual permissions
+          ),
+        }),  
         (("Important dates"), {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (
@@ -300,6 +313,8 @@ class CustomUserAdmin(BaseUserAdmin):
         }),
     )
     list_display = ("username", "email", "role", "is_staff", "is_superuser")
+    list_filter = ("is_staff", "is_superuser", "is_active", "groups")
+    filter_horizontal = ("groups", "user_permissions")
 
     def save_model(self, request, obj, form, change):
         if not change:
@@ -431,6 +446,308 @@ class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
             'heads': json.dumps(HEADS),
         }
 
+class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
+    list_display = ['date','faculty_name','get_faculty_id','project_no','amount','under_head','get_assigned_to','status_badge','outward_date']
+
+    list_filter = ['bill_status', 'date', 'whom_to', 'under_head','faculty']
+    search_fields = [
+        'faculty_name',
+        'faculty__pi_name',
+        'faculty__faculty_id',
+        'project_no',
+        'received_from',
+        'particulars',
+        'po_no',
+    ]
+    date_hierarchy = 'date'
+
+    ordering = ['-date', '-id']
+
+    excel_exclude_fields = ['id']
+
+
+    def get_faculty_id(self, obj):
+        return obj.faculty.faculty_id if obj.faculty else "_"
+    get_faculty_id.short_description = "Faculty ID"
+    
+
+    def get_assigned_to(self, obj):
+        """Display assigned admin member name"""
+        if obj.whom_to:
+            full_name = obj.whom_to.get_full_name()
+            return full_name if full_name else obj.whom_to.username
+        return "-"
+    get_assigned_to.short_description = "Assigned To"
+    
+
+    def status_badge(self, obj):
+        """Display status with color-coded badge"""
+        colors = {
+            'pending': '#ff9800',    # Orange
+            'processed': '#4caf50',  # Green
+            'returned': '#f44336',   # Red
+        }
+        color = colors.get(obj.bill_status, '#999')
+        return format_html(
+            '<span style="background:{}; color:white; padding:3px 10px; '
+            'border-radius:3px; font-size:11px; font-weight:500;">{}</span>',
+            color,
+            obj.get_bill_status_display()
+        )
+    status_badge.short_description = "Status"
+    
+
+    def get_queryset(self, request):
+        """
+        Filter bills based on user role:
+        - Superuser: See all bills
+        - Admin Member: See only assigned bills
+        - Others: No access
+        """
+        qs = super().get_queryset(request)
+        qs = qs.select_related('faculty', 'whom_to')
+        
+        if request.user.is_superuser:
+            return qs
+        elif hasattr(request.user, 'role') and request.user.role == 'admin':
+            return qs.filter(whom_to=request.user)
+        else:
+            return qs.none()
+        
+    def has_add_permission(self, request):
+        """Only superusers can add bills via Excel View"""
+        return request.user.is_superuser
+    
+    def has_delete_permission(self, request, obj=None):
+        """Only superusers can delete bills"""
+        return request.user.is_superuser
+    
+    def has_change_permission(self, request, obj=None):
+        """Both superusers and admin members can change bills"""
+        if request.user.is_superuser:
+            return True
+        if hasattr(request.user, 'role') and request.user.role == 'admin':
+            return True
+        return False
+    
+    def has_view_permission(self, request, obj=None):
+        """Both superusers and admin members can view bills"""
+        return self.has_change_permission(request, obj)
+    
+    def get_excel_fields_config(self):
+        """
+        Configure Excel View fields with role-based editability
+        
+        Superuser: All fields editable
+        Admin Member: Only status, outward_date, remarks editable
+        
+        ✅ Faculty ID → User enters, Name auto-fills from FK
+        ✅ If Faculty ID not found, user can manually enter Faculty Name
+        """
+        request = getattr(self, '_current_request', None)
+        
+        # Base field configuration
+        fields_config = [
+            {
+                'name': 'date',
+                'label': 'Date',
+                'type': 'DateField',
+                'editable': True,
+                'required': True,
+                'width': 130
+            },
+            {
+                'name': 'received_from',
+                'label': 'Received From',
+                'type': 'CharField',
+                'editable': True,
+                'required': False,
+                'width': 180
+            },
+            {
+                'name': 'faculty',
+                'label': 'Faculty ID',
+                'type': 'ForeignKey',
+                'editable': True,
+                'required': False,  # Optional - can enter manually
+                'width': 180,
+                'help_text': 'Select Faculty ID - Name will auto-fill'
+            },
+            {
+                'name': 'faculty_name',
+                'label': 'Faculty Name',
+                'type': 'CharField',
+                'editable': True,  # ✅ Changed to True - manual entry allowed
+                'required': False,
+                'width': 220,
+                'help_text': 'Auto-fills from Faculty ID, or enter manually'
+            },
+            {
+                'name': 'project_no',
+                'label': 'Project No.',
+                'type': 'CharField',
+                'editable': True,
+                'required': False,
+                'width': 150
+            },
+            {
+                'name': 'particulars',
+                'label': 'Particulars',
+                'type': 'TextField',
+                'editable': True,
+                'required': False,
+                'width': 300
+            },
+            {
+                'name': 'amount',
+                'label': 'Amount (₹)',
+                'type': 'DecimalField',
+                'editable': True,
+                'required': True,
+                'width': 150
+            },
+            {
+                'name': 'under_head',
+                'label': 'Under Head',
+                'type': 'CharField',
+                'editable': True,
+                'required': False,
+                'width': 180
+            },
+            {
+                'name': 'po_no',
+                'label': 'PO No.',
+                'type': 'CharField',
+                'editable': True,
+                'required': False,
+                'width': 150
+            },
+            {
+                'name': 'whom_to',
+                'label': 'Assigned To',
+                'type': 'ForeignKey',
+                'editable': True,
+                'required': False,
+                'width': 200
+            },
+            {
+                'name': 'bill_status',
+                'label': 'Status',
+                'type': 'CharField',
+                'editable': True,
+                'required': True,
+                'width': 150,
+                'choices': ['pending', 'processed', 'returned']
+            },
+            {
+                'name': 'outward_date',
+                'label': 'Outward Date',
+                'type': 'DateField',
+                'editable': True,
+                'required': False,
+                'width': 130
+            },
+            {
+                'name': 'remarks',
+                'label': 'Remarks',
+                'type': 'TextField',
+                'editable': True,
+                'required': False,
+                'width': 300
+            },
+        ]
+        
+        # Apply role-based restrictions
+        if request and not request.user.is_superuser:
+            if hasattr(request.user, 'role') and request.user.role == 'admin':
+                # Admin members can only edit these fields
+                editable_fields = ['bill_status', 'outward_date', 'remarks']
+                
+                for field in fields_config:
+                    if field['name'] not in editable_fields:
+                        field['editable'] = False
+        
+        return fields_config
+    
+    # ========================================================================
+    # Excel View Context Data (Dropdowns & Options)
+    # ========================================================================
+    
+    def get_excel_context_data(self):
+        """
+        Provide dropdown options for Excel View:
+        - Status choices
+        - Faculty list
+        - Admin users list (superuser only)
+        """
+        request = getattr(self, '_current_request', None)
+        
+        context = {
+            'status_choices': json.dumps([
+                {'value': 'pending', 'label': 'Pending'},
+                {'value': 'processed', 'label': 'Processed'},
+                {'value': 'returned', 'label': 'Returned'},
+            ]),
+            'faculties': json.dumps([
+                {
+                    'id': f.id,
+                    'name': f'{f.pi_name} ({f.faculty_id})',
+                    'faculty_id': f.faculty_id
+                }
+                for f in Faculty.objects.all().order_by('pi_name')
+            ]),
+        }
+        
+        # Only superuser can see admin users for assignment
+        if request and request.user.is_superuser:
+            admin_users = CustomUser.objects.filter(
+                Q(role='admin') | Q(is_staff=True)
+            ).order_by('first_name', 'last_name')
+            
+            context['admin_users'] = json.dumps([
+                {
+                    'id': u.id,
+                    'name': f'{u.get_full_name() or u.username} ({u.username})'
+                }
+                for u in admin_users
+            ])
+        else:
+            context['admin_users'] = json.dumps([])
+        
+        return context
+    
+    # ========================================================================
+    # Excel View Override (Store request for context)
+    # ========================================================================
+    
+    def excel_view(self, request):
+        """Store request object for use in field config and context"""
+        self._current_request = request
+        return super().excel_view(request)
+    
+    # ========================================================================
+    # Save Model (Auto-set created_by)
+    # ========================================================================
+    
+    def save_model(self, request, obj, form, change):
+        """
+        Auto-populate fields on save
+        
+        ✅ created_by: Auto-set to logged-in user (new bills only)
+        ✅ faculty_name: Auto-fill from Faculty FK if selected
+        ✅ If no Faculty FK but faculty_name provided: Save as manual entry
+        """
+        if not change:  # New object
+            obj.created_by = request.user
+        
+        # Auto-populate faculty_name from Faculty FK if selected
+        if obj.faculty:
+            obj.faculty_name = obj.faculty.pi_name
+        # If faculty_name is manually entered, keep it as is
+        # (no change needed, it's already set by user)
+        
+        super().save_model(request, obj, form, change)
+
 
 # =============================================================================
 # Register Models with Custom Admin Site
@@ -444,10 +761,12 @@ custom_admin_site.register(Commitment, CommitmentAdmin)
 # 📁 Project Master Group
 custom_admin_site.register(Project, ProjectAdmin)
 custom_admin_site.register(Receipt, ReceiptAdmin)
+custom_admin_site.register(BillInward, BillInwardAdmin)
 
 # 👥 User Management Group
 custom_admin_site.register(CustomUser, CustomUserAdmin)
 custom_admin_site.register(Faculty)
+custom_admin_site.register(Group)
 
 # admin.py - WORKING VERSION
 
