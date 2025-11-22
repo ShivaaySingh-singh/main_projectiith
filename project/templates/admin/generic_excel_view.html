@@ -227,42 +227,54 @@
         <a href="/admin/project/{{ model_name }}/">{{ model_verbose_name }}s</a> › 
         Excel View
     </div>
-    <h1>📊 {{ model_verbose_name }} - Excel View</h1>
+    <h1> {{ model_verbose_name }} - Excel View</h1>
 </div>
 
 <!-- ✅ NEW: Search Bar -->
 <div class="search-bar">
     {% if has_grants %}
     <div class="search-input-group">
-        <label>🔍 Grant No:</label>
+        <label> Grant No:</label>
         <input type="text" id="searchGrantNo" placeholder="Search by grant number or short no...">
     </div>
     {% else %}
     <div class="search-input-group">
-        <label>🔍 Project No:</label>
+        <label> Project No:</label>
         <input type="text" id="searchProjectNo" placeholder="Search by project number...">
     </div>
     {% endif %}
     
     <div class="search-input-group">
-        <label>📅 Date From:</label>
+        <label> Date From:</label>
         <input type="date" id="searchDateFrom">
     </div>
     
     <div class="search-input-group">
-        <label>📅 Date To:</label>
+        <label> Date To:</label>
         <input type="date" id="searchDateTo">
     </div>
     
     <div class="search-actions">
-        <button class="btn-search" onclick="applySearch()">🔍 Search</button>
-        <button class="btn-clear" onclick="clearSearch()">✖️ Clear</button>
+        <button class="btn-search" onclick="applySearch()"> Search</button>
+        <button class="btn-clear" onclick="clearSearch()"> Clear</button>
     </div>
 </div>
+{% if model_name == 'billinward' %}
+<div style="background:white; padding:10px 30px; border-bottom:1px solid #ddd;">
+    <label style="font-weight:600;">Filter by Status:</label>
+    <select id="statusFilter" onchange="applyStatusFilter()" 
+        style="padding:6px 10px; border:2px solid #ccc; border-radius:5px;">
+        <option value="">All</option>
+        <option value="pending">Pending</option>
+        <option value="processed">Processed</option>
+        <option value="returned">Returned</option>
+    </select>
+</div>
+{% endif  %}
 
 <div class="controls-bar">
     {% if has_add_permission %}
-    <button class="btn btn-primary" onclick="addNewRow()">➕ Add Row</button>
+    <button class="btn btn-primary" onclick="addNewRow()"> Add Row</button>
     {% endif %}
     
     {% if has_change_permission %}
@@ -273,13 +285,22 @@
     
     
     
-    <button class="btn btn-warning" onclick="refreshData()">🔄 Refresh</button>
+    <button class="btn btn-warning" onclick="refreshData()"> Refresh</button>
     
     {% if has_delete_permission %}
-    <button class="btn btn-danger" onclick="deleteSelected()">🗑️ Delete Selected</button>
+    <button class="btn btn-danger" onclick="deleteSelected()"> Delete Selected</button>
     {% endif %}
     
     <span class="status" id="statusMessage">Ready</span>
+</div>
+<div id="summaryBar" style="
+    padding: 10px 25px;
+    background: #eef5ff;
+    border-bottom: 2px solid #d0ddf0;
+    font-weight: 600;
+    display: flex;
+    gap: 40px;
+    align-items: center">
 </div>
 
 <div class="grid-container">
@@ -295,12 +316,39 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
+<!-- DEBUG SCRIPT START -->
+<!-- DEBUG: Check template data in console -->
+ 
+
+<script>
+    console.log("🔥 ACTIVE TEMPLATE VERSION = V1000");
+    console.log("🔍 MODEL_NAME:", "{{ model_name }}");
+    console.log("🔍 HAS_GRANTS:", "{{ has_grants }}");
+
+    console.log("🔍 ADMIN_USERS:", {{ admin_users|safe }});
+    console.log("🔍 TDS_SECTIONS:", {{ tds_sections|safe }});
+    console.log("🔍 TDS_RATES:", {{ tds_rates|safe }});
+
+    {% if has_grants %}
+    console.log("🔍 SEED_GRANTS:", {{ seed_grants|safe }});
+    console.log("🔍 TDG_GRANTS:", {{ tdg_grants|safe }});
+    console.log("🔍 HEADS:", {{ heads|safe }});
+    {% else %}
+    console.log("ℹ No grants for this model.");
+    {% endif %}
+
+    console.log("🔍 FIELDS_CONFIG:", {{ fields_config|safe }});
+</script>
+
 
 <script>
     const MODEL_NAME = "{{ model_name }}";
     const ADMIN_USERS = {{ admin_users|safe }};
     const API_URL = `/api/${MODEL_NAME}/`;
     const FIELDS_CONFIG = {{ fields_config|safe }};
+    
+    const TDS_SECTIONS = {{ tds_sections|safe}};
+    const TDS_RATES = {{tds_rates|safe}};
     const HAS_GRANTS = {{ has_grants|lower }};
     
     {% if has_grants %}
@@ -387,8 +435,8 @@
             cellEditor: 'agSelectCellEditor',
             cellEditorParams: {
                 values: [
-                    ...SEED_GRANTS.map(g => `${g.short_no} (Seed)`),
-                    ...TDG_GRANTS.map(g => `${g.short_no} (TDG)`)
+                    ...(SEED_GRANTS || []).map(g => `${g.short_no} (Seed)`),
+                    ...(TDG_GRANTS || []).map(g => `${g.short_no} (TDG)`)
                 ]
             },
             valueGetter: params => {
@@ -407,16 +455,16 @@
                     if (type === 'Seed') {
                         const grant = SEED_GRANTS.find(g => g.short_no === shortNo);
                         if (grant) {
-                            params.data.seed_grant = shortNo;
+                            params.data.seed_grant = grant.id;
                             params.data.seed_grant_short = shortNo;
                             params.data.grant_no_display = grant.grant_no;
                             params.data.tdg_grant = null;
                             params.data.tdg_grant_short = null;
                         }
                     } else {
-                        const grant = TDG_GRANTS.find(g => g.short_no === shortNo);
+                        const grant = (TDG_GRANTS || []).find(g => g.short_no === shortNo);
                         if (grant) {
-                            params.data.tdg_grant = shortNo;
+                            params.data.tdg_grant = grant.id;
                             params.data.tdg_grant_short = shortNo;
                             params.data.grant_no_display = grant.grant_no;
                             params.data.seed_grant = null;
@@ -442,6 +490,63 @@
             if (field.name === 'id' || field.name === 'seed_grant' || field.name === 'tdg_grant') {
                 return;
             }
+
+            if(field.name === "tds_section"){
+                cols.push({
+                    headerName: field.label,       // OR "TDS Section"
+                    field: "tds_section",
+                    width: field.width || 150,
+                    editable: field.editable,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: {
+                        values: TDS_SECTIONS.map(s => String(s.id))
+                    },
+                    valueFormatter: params => {
+                        const sec = TDS_SECTIONS.find(s => String(s.id) === String(params.value));
+                        return sec ? sec.code : "";
+                    },
+                    valueParser: params => parseInt(params.newValue || params.value)
+
+                });
+                return;
+            }
+
+            if (field.name === "tds_rate") {
+                cols.push({
+                    headerName: field.label,    // OR "TDS Rate(%)"
+                    field: "tds_rate",
+                    width: field.width || 150,
+                    editable: field.editable,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: params => {
+                        if (!params.data.tds_section) return { values: [] };
+                        const filtered = TDS_RATES.filter(
+                            r => Number(r.section_id) === Number(params.data.tds_section)
+                        );
+                        return { values: filtered.map(r => String(r.id)) };
+                    },
+                    valueFormatter: params => {
+                        const rate = TDS_RATES.find(r => String(r.id) === String(params.value));
+                        return rate ? rate.percent + "%" : "";
+                    },
+                    valueParser: params => parseInt(params.newValue || params.value)
+                });
+                return;
+            }
+                         
+
+
+
+
+
+
+
+                
+
+
+
+                
+            
             
             const colDef = {
                 headerName: field.label,
@@ -490,10 +595,13 @@
                 colDef.cellEditor = 'agSelectCellEditor';
                 colDef.cellEditorParams = { values: HEADS };
             }
+
+            
             {% endif %}
             
             cols.push(colDef);
         });
+        
         
         return cols;
     }
@@ -505,13 +613,16 @@
             .then(data => {
                 allData = data;
                 gridApi.setGridOption('rowData', data);
+
+                updateSummary(data);
+                
                 updateStats();
-                updateStatus(`✅ Loaded ${data.length} records`, 'success');
+                updateStatus(` Loaded ${data.length} records`, 'success');
                 showLoading(false);
             })
             .catch(error => {
                 console.error('Error:', error);
-                updateStatus('❌ Error loading data', 'error');
+                updateStatus(' Error loading data', 'error');
                 showLoading(false);
             });
     }
@@ -556,7 +667,7 @@
         }
         
         gridApi.setGridOption('rowData', filteredData);
-        updateStatus(`🔍 Found ${filteredData.length} records`, 'success');
+        updateStatus(` Found ${filteredData.length} records`, 'success');
     }
     
     // ✅ NEW: Clear Search
@@ -570,7 +681,7 @@
         document.getElementById('searchDateTo').value = '';
         
         gridApi.setGridOption('rowData', allData);
-        updateStatus(`✅ Showing all ${allData.length} records`, 'success');
+        updateStatus(` Showing all ${allData.length} records`, 'success');
     }
     
     function addNewRow() {
@@ -650,12 +761,12 @@
             }
             
             modifiedRows.clear();
-            updateStatus(`✅ Saved ${newRows.length + updatedRows.length} row(s)`, 'success');
+            updateStatus(` Saved ${newRows.length + updatedRows.length} row(s)`, 'success');
             setTimeout(() => loadData(), 1000);
             
         } catch (error) {
             console.error('Save error:', error);
-            updateStatus('❌ Error: ' + error.message, 'error');
+            updateStatus(' Error: ' + error.message, 'error');
         } finally {
             showLoading(false);
         }
@@ -713,11 +824,11 @@
             
             gridApi.applyTransaction({ remove: selectedRows });
             updateStats();
-            updateStatus(`✅ Deleted ${selectedRows.length} row(s)`, 'success');
+            updateStatus(` Deleted ${selectedRows.length} row(s)`, 'success');
             
         } catch (error) {
             console.error('Delete error:', error);
-            updateStatus('❌ Error deleting rows', 'error');
+            updateStatus(' Error deleting rows', 'error');
         } finally {
             showLoading(false);
         }
@@ -735,13 +846,83 @@
         clearSearch();
         loadData();
     }
+
+    function calculateTDS(row) {
+        const tdsRateObj = TDS_RATES.find(r => Number(r.id) === Number(row.tds_rate));
+        if (!tdsRateObj || !row.amount) {
+            row.tds_amount = 0;
+            row.net_amount = row.amount || 0;
+            return;
+        }
+        const percent = Number(tdsRateObj.percent);
+        const amount = Number(row.amount);
+
+        row.tds_amount = (amount * percent / 100).toFixed(2);
+        row.net_amount = (amount - row.tds_amount).toFixed(2);
+    }
     
     function trackChange(rowData) {
-        if (rowData.id) {
+        calculateTDS(rowData);
+
+        if (rowData.id) { 
             modifiedRows.set(rowData.id, rowData);
             updateStatus(`${modifiedRows.size} row(s) modified`, 'warning');
         }
+        gridApi.refreshCells({ force: true});
     }
+    function applyStatusFilter() {
+        const val = document.getElementById("statusFilter").value;
+        let filtered = [...allData];
+
+        if (val) {
+            filtered = filtered.filter(r => r.bill_status === val);
+        }
+
+        gridApi.setGridOption('rowData', filtered);
+        updateSummary(filtered);
+
+    }
+    
+    function updateSummary(dataList = allData) {
+        const box = document.getElementById("summaryBar");
+
+        if (!box) return;
+
+        if (MODEL_NAME === "billinward") {
+            const pending = dataList.filter(r => r.bill_status === "pending").length;
+            const processed = dataList.filter(r => r.bill_status === "processed").length;
+            const returned = dataList.filter(r => r.bill_status === "returned").length;
+
+            box.innerHTML = `
+               <span>Pending: <strong>${pending}</strong></span>
+               <span>Processed: <strong>${processed}</strong></span>
+               <span>Returned: <strong>${returned}</strong></span>
+               <span>Total: <strong>${dataList.length}</strong></span>
+            `;
+        }
+
+        else if (MODEL_NAME === "expenditure") {
+            const total = dataList.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+            box.innerHTML = `
+                <span>Total Expenditure Amount: <strong>₹${total.toFixed(2)}</strong></span>
+            `;
+        }
+
+        else if (MODEL_NAME === "commitment") {
+            const total = dataList.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+            box.innerHTML = `
+                <span>Total Commitment Amount: <strong>₹${total.toFixed(2)}</strong></span>
+            `;
+        }
+
+        else {
+            box.innerHTML = "";
+        }
+    }
+
+
+
+
     
     function updateStats() {
         // Can be enhanced

@@ -7,6 +7,7 @@ from .views import GenericModelAPIView, GenericModelDetailAPIView
 
 urlpatterns = [
     path('', views.home, name='home'),
+
     
     path('dashboard/', views.dashboard, name='dashboard'),
     path('project/<int:project_id>/', views.project_report, name='project_detail'),
@@ -21,6 +22,7 @@ urlpatterns = [
     path('fund-request/create/', views.create_fund_request, name='create_fund_request'),
     path('fund-request/status/', views.request_status, name='request_status'),
     path('fund-request/get-projects/', views.get_projects_by_type, name='get_projects_by_type'),
+    path('bill_inwards/', views.inward_bills_view, name='bill_inwards'),
     
     
 

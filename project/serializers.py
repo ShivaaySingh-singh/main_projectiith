@@ -14,7 +14,7 @@ class GrantRelatedSerializer(serializers.ModelSerializer):
             return obj.seed_grant.grant_no
         elif obj.tdg_grant:
             return obj.tdg_grant.grant_no
-        return ''
+        return ""
     
     def validate(self, data):
         """Ensure either seed_grant or tdg_grant is provided (not both)"""
@@ -33,6 +33,16 @@ class GrantRelatedSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Cannot have both seed_grant and tdg_grant")
         
         return data
+    
+    def create(self, validated_data):
+    
+        if validated_data.get('seed_grant'):
+            validated_data['tdg_grant'] = None
+
+        if validated_data.get('tdg_grant'):
+            validated_data['seed_grant'] = None
+
+        return super().create(validated_data)
     
     def update(self, instance, validated_data):
         """Handle grant updates properly"""

@@ -18,7 +18,7 @@ import json  # ✅ ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant,
-    Expenditure, Commitment, CustomUser, FundRequest, BillInward
+    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate
 )
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
@@ -72,6 +72,32 @@ class ExcelViewMixin:
         model_name = self.model.__name__
         fields_config = self.get_excel_fields_config()
         context_data = self.get_excel_context_data()
+        json_keys = [
+            'seed_grants', 'tdg_grants',
+            'admin_users', 'tds_sections', 'tds_rates',
+            'heads', 'status_choices', 'faculties']
+        for k in json_keys:
+            if k in context_data:
+                val = context_data[k]
+            # If it's already a JSON string, keep as-is.
+                if isinstance(val, str):
+                # try to detect if it's already JSON (starts with [ or {)
+                    trimmed = val.strip()
+                    if not (trimmed.startswith('[') or trimmed.startswith('{')):
+                        context_data[k] = json.dumps(val)
+                    else:
+                    # keep the string (assume it's already JSON)
+                        context_data[k] = val
+                else:
+                # Python object -> dump to JSON string
+                    context_data[k] = json.dumps(val)
+            else:
+            # ensure key exists as JSON empty array/object where appropriate
+                if k in ('heads', 'status_choices', 'faculties', 'admin_users'):
+                    context_data[k] = json.dumps([])
+                else:
+                    context_data[k] = json.dumps([])
+        
         
         context = {
             'model_name': model_name.lower(),
@@ -142,7 +168,20 @@ class ExcelViewMixin:
                     'heads': json.dumps(HEADS)
                 }
         """
-        return {}
+
+        return {
+            'seed_grants': json.dumps([]),
+             
+             
+            'tdg_grants': json.dumps([]),
+            
+            
+            'admin_users': json.dumps([]),
+            'tds_sections': json.dumps([]),
+            'tds_rates': json.dumps([]),
+            
+            'heads': json.dumps([]),
+        }
 
 # =============================================================================
 # Custom Admin Site with Grouping (Existing - No changes)
@@ -160,6 +199,7 @@ class CustomAdminSite(admin.AdminSite):
             'User Management': ['CustomUser', 'Faculty', 'Group'],
             'Fund Request': ['FundRequest'],
             'Inward' : ['BillInward'],
+            'TDS' :['TDSSection', 'TDSRate'],
            
         }
 
@@ -422,7 +462,7 @@ class ExpenditureAdmin(ExcelViewMixin, ImportExportModelAdmin):
         return {
             'seed_grants': list(SeedGrant.objects.values('short_no', 'grant_no', 'name')),
             'tdg_grants': list(TDGGrant.objects.values('short_no', 'grant_no', 'name')),
-            'heads': json.dumps(HEADS),  # Convert list to JSON string
+            'heads': HEADS,  # Convert list to JSON string
         }
 
 
@@ -447,7 +487,7 @@ class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
         }
 
 class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
-    list_display = ['date','faculty_name','get_faculty_id','project_no','amount','under_head','get_assigned_to','status_badge','outward_date']
+    list_display = ['date','faculty_name','get_faculty_id','project_no','amount','tds_section','tds_rate','tds_amount','net_amount','under_head','get_assigned_to','status_badge','outward_date']
 
     list_filter = ['bill_status', 'date', 'whom_to', 'under_head','faculty']
     search_fields = [
@@ -607,6 +647,39 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
                 'width': 150
             },
             {
+                'name': 'tds_section',
+                'label': 'TDS_Section',
+                'type': 'ForeignKey',
+                'editable': True,
+                'required': True,
+                'width':120
+            },
+           {
+                'name': 'tds_rate',
+                'label': 'TDs_Rate',
+                'type': 'ForeignKey',
+                'editable': True ,
+                'required': True,
+                'width': 120
+            },   
+              
+            {
+                'name': 'tds_amount',
+                'label': 'TDS Amount',
+                'type': 'DecimalField',
+                'editable': False,
+                'required': False,
+                'width': 150
+            },
+            {
+                'name': 'net_amount',
+                'label': 'Net Amount',
+                'type': 'DecimalField',
+                'editable': False,
+                'required': False,
+                'width': 150
+            },
+            {
                 'name': 'under_head',
                 'label': 'Under Head',
                 'type': 'CharField',
@@ -681,6 +754,8 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
         - Admin users list (superuser only)
         """
         request = getattr(self, '_current_request', None)
+
+        
         
         context = {
             'status_choices': json.dumps([
@@ -697,6 +772,18 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
                 for f in Faculty.objects.all().order_by('pi_name')
             ]),
         }
+
+        context['tds_sections'] = json.dumps([
+            {'id': s.id, 'code':s.section}
+            for s in TDSSection.objects.all().order_by('section')
+        ])
+
+        context['tds_rates'] = json.dumps([
+            {'id': r.id, 'section_id': r.section_id, 'percent': float(r.percent)}
+            for r in TDSRate.objects.select_related("section").all()
+
+            
+        ])
         
         # Only superuser can see admin users for assignment
         if request and request.user.is_superuser:
@@ -745,6 +832,12 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
             obj.faculty_name = obj.faculty.pi_name
         # If faculty_name is manually entered, keep it as is
         # (no change needed, it's already set by user)
+        if obj.tds_rate and obj.amount:
+            obj.tds_amount = (obj.amount * obj.tds_rate.percent) / 100
+            obj.net_amount = obj.amount -obj.tds_amount
+        else:
+            obj.tds_amount = 0
+            obj.net_amount = obj.amount
         
         super().save_model(request, obj, form, change)
 
@@ -867,3 +960,15 @@ class FundRequestAdmin(ExcelViewMixin, admin.ModelAdmin):
 
 
 custom_admin_site.register(FundRequest, FundRequestAdmin)
+
+class TDSSectionAdmin(admin.ModelAdmin):
+    list_display = ("id", "section")
+    search_fields = ("Section",)
+
+class TDSRateAdmin(admin.ModelAdmin):
+    list_display = ("id", "section", "percent")
+    list_filter = ("section",)
+    search_fields = ("section__section",)
+
+custom_admin_site.register(TDSSection, TDSSectionAdmin)
+custom_admin_site.register(TDSRate, TDSRateAdmin)

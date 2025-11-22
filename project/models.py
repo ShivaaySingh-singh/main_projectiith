@@ -415,6 +415,20 @@ class TDGGrant(models.Model):
     class Meta:
         verbose_name = "TDG Grant"
         verbose_name_plural = "TDG Grants"
+# For inward supporting table of TDSSection and TDSRate
+class TDSSection(models.Model):
+    section = models.CharField(max_length=10, unique=True)
+
+    def __str__(self):
+        return self.section
+    
+
+class TDSRate(models.Model):
+    section = models.ForeignKey(TDSSection, on_delete=models.CASCADE, related_name="tds_rates")
+    percent = models.DecimalField(max_digits=5, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.percent}%"
     
 class BillInward(models.Model):
     BILL_STATUS_CHOICES = [
@@ -449,6 +463,10 @@ class BillInward(models.Model):
     amount = models.DecimalField(max_digits=12,decimal_places=2,verbose_name="Amount (in Rs.)")
     under_head = models.CharField(max_length=100,blank=True,null=True,verbose_name="Under Head")
     po_no = models.CharField(max_length=100,blank=True,null=True,verbose_name="PO No.")
+    tds_section =models.ForeignKey(TDSSection, on_delete=models.SET_NULL, null=True, blank=True)
+    tds_rate = models.ForeignKey(TDSRate, on_delete=models.SET_NULL, null=True, blank=True)
+    tds_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    net_amount = models.DecimalField(max_digits=10, decimal_places =2, default=0)
     # Assignment & Status
     whom_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
                                 limit_choices_to={'role': 'admin'}, related_name='assigned_bills',

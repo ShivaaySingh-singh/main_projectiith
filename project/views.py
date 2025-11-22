@@ -628,6 +628,40 @@ def request_status(request):
     }
     return render(request, 'request_status.html', context)
 
+@login_required
+
+def inward_bills_view(request):
+    try: 
+        #Get the faculty associated with the logged-in user
+        faculty = Faculty.objects.get(user=request.user)
+
+        bills = BillInward.objects.filter(faculty=faculty).select_related(
+            'faculty', 'whom_to'
+        ).order_by('-date', '-id')
+
+        total_count = bills.count()
+        pending_count = bills.filter(bill_status='pending').count()
+        processed_count = bills.filter(bill_status='processed').count()
+        returned_count = bills.filter(bill_status='returned').count()
+
+        context = {
+            'bills': bills,
+            'faculty': faculty,
+            'total_count': total_count,
+            'pending_count': pending_count,
+            'processed_count': processed_count,
+            'returned_count': returned_count,
+
+        }
+        return render(request, 'bill_inwards.html', context)
+    
+    except Faculty.DoesNotExist:
+        return redirect('dashboard')
+
+
+    
+
+
 
 
 
