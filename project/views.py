@@ -139,9 +139,9 @@ def dashboard(request):
         show_seed = True
         show_tdg = False   # ✅ show both Seed + TDG together
     else:
-        show_projects = True
+        show_projects = False
         show_seed = False
-        show_tdg = False  # ✅ default: show everything
+        show_tdg = True  # ✅ default: show everything
 
     return render(request, "dashboard.html", {
         "faculty": faculty,

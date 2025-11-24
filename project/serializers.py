@@ -17,22 +17,33 @@ class GrantRelatedSerializer(serializers.ModelSerializer):
         return ""
     
     def validate(self, data):
-        """Ensure either seed_grant or tdg_grant is provided (not both)"""
-        seed_grant = data.get('seed_grant')
-        tdg_grant = data.get('tdg_grant')
+        short_no = self.initial_data.get('short_no')
+
+        if not short_no:
+          raise serializers.ValidationError("short_no is required")
         
-        # For updates, check existing values
-        if self.instance:
-            seed_grant = seed_grant if 'seed_grant' in data else self.instance.seed_grant
-            tdg_grant = tdg_grant if 'tdg_grant' in data else self.instance.tdg_grant
-        
-        if not seed_grant and not tdg_grant:
-            raise serializers.ValidationError("Either seed_grant or tdg_grant must be provided")
-        
-        if seed_grant and tdg_grant:
-            raise serializers.ValidationError("Cannot have both seed_grant and tdg_grant")
-        
-        return data
+        if short_no.startswith("SG"):
+            try:
+                data['seed_grant'] = SeedGrant.objects.get(short_no=short_no)
+                data['tdg_grant'] = None
+                return data
+            except SeedGrant.DoesNotExist:
+                raise serializers.ValidationError("Invalid SeedGrant")
+            
+        if short_no.startswith("TDG"):
+            try:
+                data['tdg_grant'] = TDGGrant.objects.get(short_no=short_no)
+                data['seed_grant'] = None
+                return data
+            except TDGGrant.DoesNotExist:
+                 raise serializers.ValidationError("Invalid TDGGrant")
+            
+        raise serializers.ValidationError("short_no must begin with SG or TDG")
+
+
+
+
+       
     
     def create(self, validated_data):
     

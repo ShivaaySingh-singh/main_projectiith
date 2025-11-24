@@ -14,7 +14,7 @@ from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 from django.utils.html import format_html
 
-import json  # ✅ ADD THIS - needed for JSON encoding
+import json  #  ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant,
@@ -734,7 +734,7 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
         if request and not request.user.is_superuser:
             if hasattr(request.user, 'role') and request.user.role == 'admin':
                 # Admin members can only edit these fields
-                editable_fields = ['bill_status', 'outward_date', 'remarks']
+                editable_fields = ['tds_section', 'tds_rate','bill_status', 'outward_date', 'remarks']
                 
                 for field in fields_config:
                     if field['name'] not in editable_fields:
@@ -794,7 +794,7 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
             context['admin_users'] = json.dumps([
                 {
                     'id': u.id,
-                    'name': f'{u.get_full_name() or u.username} ({u.username})'
+                    'name': f'{u.get_full_name() or u.username} '
                 }
                 for u in admin_users
             ])
@@ -820,9 +820,9 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
         """
         Auto-populate fields on save
         
-        ✅ created_by: Auto-set to logged-in user (new bills only)
-        ✅ faculty_name: Auto-fill from Faculty FK if selected
-        ✅ If no Faculty FK but faculty_name provided: Save as manual entry
+         created_by: Auto-set to logged-in user (new bills only)
+         faculty_name: Auto-fill from Faculty FK if selected
+         If no Faculty FK but faculty_name provided: Save as manual entry
         """
         if not change:  # New object
             obj.created_by = request.user
