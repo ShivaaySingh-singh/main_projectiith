@@ -321,32 +321,33 @@
  
 
 <script>
-    console.log("🔥 ACTIVE TEMPLATE VERSION = V1000");
-    console.log("🔍 MODEL_NAME:", "{{ model_name }}");
-    console.log("🔍 HAS_GRANTS:", "{{ has_grants }}");
+    console.log(" ACTIVE TEMPLATE VERSION = V1000");
+    console.log(" MODEL_NAME:", "{{ model_name }}");
+    console.log(" HAS_GRANTS:", "{{ has_grants }}");
 
-    console.log("🔍 ADMIN_USERS:", {{ admin_users|safe }});
-    console.log("🔍 TDS_SECTIONS:", {{ tds_sections|safe }});
-    console.log("🔍 TDS_RATES:", {{ tds_rates|safe }});
+    console.log(" ADMIN_USERS:", {{ admin_users|safe }});
+    console.log(" TDS_SECTIONS:", {{ tds_sections|safe }});
+    console.log(" TDS_RATES:", {{ tds_rates|safe }});
 
     {% if has_grants %}
-    console.log("🔍 SEED_GRANTS:", {{ seed_grants|safe }});
-    console.log("🔍 TDG_GRANTS:", {{ tdg_grants|safe }});
-    console.log("🔍 HEADS:", {{ heads|safe }});
+    console.log(" SEED_GRANTS:", {{ seed_grants|safe }});
+    console.log(" TDG_GRANTS:", {{ tdg_grants|safe }});
+    console.log(" HEADS:", {{ heads|safe }});
     {% else %}
     console.log("ℹ No grants for this model.");
     {% endif %}
 
-    console.log("🔍 FIELDS_CONFIG:", {{ fields_config|safe }});
+    console.log(" FIELDS_CONFIG:", {{ fields_config|safe }});
 </script>
 
 
 <script>
     const MODEL_NAME = "{{ model_name }}";
+    const PRIMARY_KEY = "{{ primary_key_field }}";
     const ADMIN_USERS = {{ admin_users|safe }};
     const API_URL = `/api/${MODEL_NAME}/`;
     const FIELDS_CONFIG = {{ fields_config|safe }};
-    
+    const FACULTIES = {{ faculties|safe }};
     const TDS_SECTIONS = {{ tds_sections|safe}};
     const TDS_RATES = {{tds_rates|safe}};
     const HAS_GRANTS = {{ has_grants|lower }};
@@ -396,16 +397,21 @@
                 width: 50,
                 pinned: 'left'
             },
-            {
-                headerName: "ID",
-                field: "id",
-                width: 80,
-                editable: false,
-                cellStyle: { backgroundColor: '#f8f9fa', fontWeight: 'bold' },
-                pinned: 'left'
-            }
         ];
         
+
+             
+
+        cols.push({
+            headerName: PRIMARY_KEY === 'short_no' ? 'Short No' : 'ID',
+            field: PRIMARY_KEY,
+            width: 120,
+            editable: PRIMARY_KEY === 'short_no',
+            pinned: 'left',
+            cellStyle: {backgroundColor: '#f8f9fa', fontweight: 'bold'},
+        });
+        
+         
         {% if has_grants %}
         cols.push({
             headerName: "Grant Number",
@@ -487,7 +493,7 @@
         {% endif %}
         
         FIELDS_CONFIG.forEach(field => {
-            if (field.name === 'id' || field.name === 'seed_grant' || field.name === 'tdg_grant') {
+            if (field.name === 'PRIMARY_KEY' || field.name === 'seed_grant' || field.name === 'tdg_grant') {
                 return;
             }
 
@@ -533,7 +539,44 @@
                 });
                 return;
             }
-                         
+            
+            if (field.name === "faculty") {
+                cols.push({
+                    headerName: "Faculty ID",
+                    field: "faculty",
+                    width: 150,
+                    editable: true,
+                    cellEditor: "agSelectCellEditor",
+                    cellEditorParams: {
+                        values: FACULTIES.map(f => f.faculty_id)
+                    },
+                    valueFormatter: params => {
+                        const f = FACULTIES.find(x => x.faculty_id === params.value);
+                        return f ? f.faculty_id : "";
+                    },
+                    valueSetter: params => {
+                        const facultyId = params.newValue;
+                        const f = FACULTIES.find(x => x.faculty_id === facultyId);
+
+                        params.data.faculty = facultyId;
+
+                        if (f) {
+                            params.data.pi_name = f.pi_name;
+                            params.data.dept = f.department;
+                        }
+
+                        trackChange(params.data);
+
+                        params.api.refreshCells({
+                            rowNodes: [params.node],
+                            columns: ['pi_name', 'dept'],
+                            force: true
+                        });
+                        return true;
+                    } 
+                });
+                return;
+            }
 
 
 
@@ -685,15 +728,23 @@
     }
     
     function addNewRow() {
-        const newRow = { id: null };
+        const newRow = {};
+        newRow[PRIMARY_KEY] = null;
+
         
         FIELDS_CONFIG.forEach(field => {
+            if (field.name === PRIMARY_KEY) return;
+
             if (field.name === 'date') {
                 newRow[field.name] = new Date().toISOString().split('T')[0];
             } else if (field.type === 'DecimalField' || field.type === 'FloatField') {
                 newRow[field.name] = 0;
             } else {
                 newRow[field.name] = '';
+                if (field.name === "faculty") newRow[field.name] = "";
+                if (field.name === "pi_name") newRow[field.name] = "";
+                if (field.name === "dept") newRow[field.name] = "";
+
             }
         });
         
@@ -713,7 +764,7 @@
         const allRows = [];
         gridApi.forEachNode(node => allRows.push(node.data));
         
-        const newRows = allRows.filter(row => !row.id);
+        const newRows = allRows.filter(row => !row[PRIMARY_KEY]);
         const updatedRows = Array.from(modifiedRows.values());
         
         if (newRows.length === 0 && updatedRows.length === 0) {
@@ -744,8 +795,8 @@
             
             for (const row of updatedRows) {
                 const payload = preparePayload(row);
-                
-                const updateResponse = await fetch(`${API_URL}${row.id}/`, {
+                const pkValue = row[PRIMARY_KEY];
+                const updateResponse = await fetch(`${API_URL}${pkValue}/`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
@@ -781,6 +832,9 @@
             }
         });
         
+        delete payload.name;
+        delete payload.dept;
+
         {% if has_grants %}
         if (row.seed_grant_short) payload.short_no = row.seed_grant_short;
         if (row.tdg_grant_short) payload.short_no = row.tdg_grant_short;
@@ -814,8 +868,9 @@
         
         try {
             for (const row of selectedRows) {
+                const pkValue = row[PRIMARY_KEY];
                 if (row.id) {
-                    await fetch(`${API_URL}${row.id}/`, {
+                    await fetch(`${API_URL}${pkValue}/`, {
                         method: 'DELETE',
                         headers: { 'X-CSRFToken': getCookie('csrftoken') }
                     });
@@ -863,9 +918,9 @@
     
     function trackChange(rowData) {
         calculateTDS(rowData);
-
-        if (rowData.id) { 
-            modifiedRows.set(rowData.id, rowData);
+        const pkValue = rowData[PRIMARY_KEY];
+        if (pkValue) { 
+            modifiedRows.set(pkValue, rowData);
             updateStatus(`${modifiedRows.size} row(s) modified`, 'warning');
         }
         gridApi.refreshCells({ force: true});
@@ -877,7 +932,7 @@
         if (val) {
             filtered = filtered.filter(r => r.bill_status === val);
         }
-
+ 
         gridApi.setGridOption('rowData', filtered);
         updateSummary(filtered);
 

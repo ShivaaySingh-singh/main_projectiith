@@ -16,13 +16,15 @@ def validate_positive_amount(value):
         return value
 
 class Faculty(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
-    faculty_id = models.CharField(max_length=50, unique=True, blank=False, null=False)  # Excel: Faculty ID
+    user = models.OneToOneField(settings.AUTH_USER_MODEL,related_name='faculty', on_delete=models.CASCADE, null=True, blank=True)
+    faculty_id = models.CharField(max_length=50, unique=True, primary_key=True)  # Excel: Faculty ID
     pi_name = models.CharField(max_length=255)  # Excel: PI Name
     email = models.EmailField(blank=True, null=True)  # Excel: PI Email ID
     designation = models.CharField(max_length=100, blank=True, null=True)
     department = models.CharField(max_length=100, blank=True, null=True)  # Excel: Dept.
     photo = models.ImageField(upload_to='faculty_photos/', blank=True, null=True)
+
+    
 
     def __str__(self):
         return self.pi_name
@@ -45,57 +47,15 @@ class Project(models.Model):
     
     
     # Primary and Unique Fields
-    project_short_no = models.CharField(
-        max_length=50, 
-        primary_key=True,
-        verbose_name="Project Short No."
-    )
-    project_no = models.CharField(
-        max_length=100, 
-        unique=True,
-        verbose_name="Project No."
-    )
-    
-    # Basic Information
-    gender = models.CharField(
-        max_length=1, 
-        choices=GENDER_CHOICES,
-        verbose_name="Gender",
+    project_short_no = models.CharField(max_length=50, primary_key=True,)
+    project_no = models.CharField(max_length=100, unique = True)
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
+    project_type = models.CharField(max_length=100,verbose_name="Project Type")
+    faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
+                                null=True, blank=True, related_name="projects")
+    pi_name = models.CharField(max_length=100)
+    co_pi_name = models.CharField(max_length=200, blank=True, null=True)
         
-    )
-    project_type = models.CharField(
-        max_length=100,
-        verbose_name="Project Type",
-        
-    )
-    
-    # Faculty and Personnel Information
-    faculty_id = models.CharField(
-        max_length=50,
-        verbose_name="Faculty ID",
-        
-    )
-    pi_name = models.CharField(
-        max_length=200,
-        verbose_name="PI Name",
-        
-    )
-    co_pi_name = models.CharField(
-        max_length=200, 
-        blank=True, 
-        null=True,
-        verbose_name="Co-PI Name"
-    )
-    pi_email = models.EmailField(
-        verbose_name="PI Email ID",
-        
-    )
-    department = models.CharField(
-        max_length=200,
-        verbose_name="Department",
-        
-    )
-    
     # Project Details
     project_title = models.TextField(
         verbose_name="Project Title",
@@ -144,6 +104,8 @@ class Project(models.Model):
         verbose_name="Project End Date",
         
     )
+    is_extended = models.BooleanField(default=False, verbose_name="Is Project Extended")
+    extended_end_date = models.DateField(null=True, blank =True, verbose_name="Extended End Date")
     project_status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -235,6 +197,10 @@ class Project(models.Model):
         verbose_name = 'Project'
         verbose_name_plural = 'Projects'
         ordering = ['-project_start_date']
+
+    @property
+    def final_end_date(self):
+        return self.extended_end_date if (self.is_extended and self.extended_end_date) else self.project_end_date
     
     def clean(self):
         """Additional validation for amount fields"""
@@ -253,22 +219,43 @@ class Project(models.Model):
                 raise ValidationError({
                     field_name: 'Only positive amounts are allowed. Negative values are not permitted.'
                 })
+            
+        if self.is_extended:
+            if not self.extended_end_date:
+                raise ValidationError({"extended_end_date": "Extended end date is required if project is extended"})
+            
+            if self.extended_end_date < self.project_end_date:
+                raise ValidationError({"extended_end_date": "Extended end date can be cannot be earlier than project end date"})
+            
     
     def save(self, *args, **kwargs):
         # Run full validation before saving
         self.full_clean()
         
         # Auto-update project status based on end date
-        if self.project_end_date:
-            today = date.today()
-            if self.project_end_date < today:
-                self.project_status = 'CLOSED'
-            else:
-                self.project_status = 'ONGOING'
+        
+        today = date.today()
+        if self.final_end_date < today:
+            self.project_status = 'CLOSED'
+        else:
+            self.project_status = 'ONGOING'
         super().save(*args, **kwargs)
     
     def __str__(self):
         return f"{self.project_short_no} - {self.project_title}"
+
+class ReceiptHead(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+
+    class Meta:
+        verbose_name = "Receipt Head"
+        verbose_name_plural = "Receipt Heads"
+        ordering = ["name"]   
+
+    def __str__(self):
+        return self.name 
+
+
 class Receipt(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="receipts")
     receipt_date = models.DateField(blank=True, null=True)                       
@@ -277,23 +264,23 @@ class Receipt(models.Model):
     reference_number = models.CharField(max_length=100, blank=True, null=True)   
 
     # sanction heads (fixed)
-    amount = models.FloatField(default=0)
-    overhead = models.FloatField(default=0)
-    equipment = models.FloatField(default=0)
-    manpower = models.FloatField(default=0)
-    consumables = models.FloatField(default=0)
-    travel = models.FloatField(default=0)
-    slf = models.FloatField("SLF@3%", default=0)
-    contingency = models.FloatField(default=0)
-    gst_consultancy = models.FloatField(default=0)
-    tds_receivables = models.FloatField(default=0)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    head = models.ForeignKey(ReceiptHead,on_delete=models.PROTECT,null=True, blank=True, related_name="receipts")
 
+    def clean(self):
+        if self.receipt.date and self.project.final_end_date:
+            if self.receipt_date > self.project.final_end_date:
+                raise ValidationError({
+                    'receipt_date': "Receipt date cannot exceed the projects final date"
+                })
+    
     def __str__(self):
         return f"{self.project.project_no} - {self.reference_number}"
     
     class Meta:
         verbose_name = "Receipt"
         verbose_name_plural = "Receipts"
+        ordering = ["receipt_date"]
 
 
     
@@ -354,10 +341,11 @@ class CustomUser(AbstractUser):
         verbose_name_plural = "Users"
 
 class SeedGrant(models.Model):
-    grant_no = models.CharField(max_length=100, primary_key=True)
-    short_no = models.CharField(max_length=50, unique=True)
-    faculty_id = models.CharField(max_length=50, blank=False, null=False)
-    name = models.CharField(max_length=255)
+    grant_no = models.CharField(max_length=100, unique=True)
+    short_no = models.CharField(max_length=50, primary_key=True)
+    faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
+                                null=True, blank=True, related_name="seed_grants")
+    pi_name = models.CharField(max_length=255)
     dept = models.CharField(max_length=100)
     title = models.TextField()
     sanction_date = models.DateField()
@@ -378,17 +366,18 @@ class SeedGrant(models.Model):
     lab_equipment = models.DecimalField(max_digits=12, decimal_places=2, default=0, null=True, blank=True)
 
     def __str__(self):
-        return f"Seed {self.grant_no} - {self.name}"
+        return f"Seed {self.grant_no} - {self.pi_name}"
     
     class Meta:
         verbose_name = "Seed Grant"
         verbose_name_plural = "Seed Grants"
 
 class TDGGrant(models.Model):
-    grant_no = models.CharField(max_length=100, primary_key=True)
-    short_no = models.CharField(max_length=50, unique=True)
-    faculty_id = models.CharField(max_length=50, blank=False, null=False)
-    name = models.CharField(max_length=255)
+    grant_no = models.CharField(max_length=100, unique=True )
+    short_no = models.CharField(max_length=50, primary_key=True)
+    faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
+                                null=True, blank=True, related_name="tdg_grants")
+    pi_name = models.CharField(max_length=255)
     co_pi = models.CharField(max_length=255, blank=True, null=True)
     dept = models.CharField(max_length=100)
     title = models.TextField()
@@ -410,7 +399,7 @@ class TDGGrant(models.Model):
     furniture = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     def __str__(self):
-        return f"TDG {self.grant_no} - {self.name}"
+        return f"TDG {self.grant_no} - {self.pi_name}"
     
     class Meta:
         verbose_name = "TDG Grant"
@@ -452,7 +441,7 @@ class BillInward(models.Model):
         to_field='faculty_id',  
     )
 
-    faculty_name = models.CharField(
+    pi_name = models.CharField(
         max_length=255,
         verbose_name="Name of the Considered Faculty",
         blank=True,
@@ -491,12 +480,12 @@ class BillInward(models.Model):
             models.Index(fields=['bill_status']),
         ]
     def __str__(self):
-        return f"{self.faculty_name or self.faculty.name} - {self.date} - Rs.{self.amount}"
+        return f"{self.pi_name or self.faculty.pi_name} - {self.date} - Rs.{self.amount}"
     
     def save(self, *args, **kwargs):
         """Auto-fill faculty_name from Faculty FK on save"""
-        if self.faculty and not self.faculty_name:
-            self.faculty_name = self.faculty.pi_name
+        if self.faculty and not self.pi_name:
+            self.pi_name = self.faculty.pi_name
         super().save(*args, **kwargs)
     
     @property
@@ -632,7 +621,7 @@ class FundRequest(models.Model):
     updated_date = models.DateTimeField(auto_now=True)
 
     faculty = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE, related_name='fund_requests')
-    faculty_name = models.CharField(max_length=200)
+    pi_name = models.CharField(max_length=200)
     
 
     #roject selection - can be Project, seedGrant , or TDGGrant
@@ -675,7 +664,7 @@ class FundRequest(models.Model):
         verbose_name_plural = "Fund Requests"
 
     def __str__(self):
-        return f"{self.faculty_name} - {self.project_no} - {self.status}"
+        return f"{self.pi_name} - {self.project_no} - {self.status}"
     
     def clean(self):
         selected = sum([
@@ -687,3 +676,78 @@ class FundRequest(models.Model):
             raise ValidationError("please select exactly one project/grant type.")
         
 
+GST_TDS_CHOICES = [
+    ("CGST", "CGST @ 2%"),
+    ("SGST", "SGST @ 2%"),
+    ("IGST", "IGST @ 2%"),
+
+]
+
+class Payment(models.Model):
+    date = models.DateField()
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="payments")
+    head = models.ForeignKey(ReceiptHead, on_delete=models.PROTECT, related_name="payments")
+
+    # Payee Info
+    payment_type = models.CharField(max_length=100)
+    name_of_payee = models.CharField(max_length=200)
+
+    # Bank Info
+    bank_name = models.CharField(max_length=200, blank=True, null=True)
+    branch = models.CharField(max_length=200, blank=True, null=True)
+    account_no = models.CharField(max_length=50, blank=True, null=True)
+    ifsc = models.CharField(max_length=20, blank=True, null=True)
+
+    # Transaction Info
+    utr_no = models.CharField(max_length=100, blank=True, null=True)
+    faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
+                                null=True, blank=True,verbose_name="Faculty",to_field='faculty_id', related_name="payments")
+
+    pi_name = models.CharField(max_length=200, blank=True, null=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    # TDS Handling (Cascading Dropdowns in AG Grid)
+    tds_section = models.ForeignKey(
+        TDSSection,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Tax U/S",
+        related_name="payments"
+    )
+
+    tds_rate = models.ForeignKey(
+        TDSRate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="TDS %",
+        related_name="payments"
+    )
+
+    tds_amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+
+    # GST-TDS
+    gst_tds_type = models.CharField(max_length=20, choices=GST_TDS_CHOICES, blank=True, null=True)
+    igst_tds = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+    cgst_tds = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+    sgst_tds = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+
+    # Final Calculated Amounts (Filled from AG Grid)
+    net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    purpose = models.TextField(blank=True, null=True)
+
+    
+
+    class Meta:
+        verbose_name = "Payment"
+        verbose_name_plural = "Payments"
+        ordering = ["-date"]
+
+    def save(self, *args, **kwargs):
+        if self.faculty:
+            self.pi_name = self.faculty.pi_name
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Payment for {self.project.project_no} on {self.date}"

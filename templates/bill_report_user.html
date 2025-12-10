@@ -85,7 +85,7 @@
 <!-- ✅ Project Info -->
 <div class="section">
     <table class="table table-bordered w-75 mx-auto">
-        <tr><th>Name</th><td>{{ grant.name|default_if_none:"" }}</td></tr>
+        <tr><th>Name</th><td>{{ grant.pi_name|default_if_none:"" }}</td></tr>
         <tr><th>Department</th><td>{{ grant.dept|default_if_none:"" }}</td></tr>
         <tr><th>Title</th><td>{{ grant.title|default_if_none:"" }}</td></tr>
         <tr><th>Seed Grant Number</th><td>{{ grant.grant_no|default_if_none:"" }}</td></tr>

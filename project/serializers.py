@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project,BillInward,Faculty
+from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project,BillInward,Faculty, Payment, Receipt, TDSSection,TDSRate
 
 # ✅ Base Serializer with Grant Support
 class GrantRelatedSerializer(serializers.ModelSerializer):
@@ -67,6 +67,10 @@ class GrantRelatedSerializer(serializers.ModelSerializer):
 
 # ✅ Expenditure Serializer
 class ExpenditureSerializer(GrantRelatedSerializer):
+    seed_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False)
+
+    tdg_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False)
+    
     class Meta:
         model = Expenditure
         fields = [
@@ -74,14 +78,13 @@ class ExpenditureSerializer(GrantRelatedSerializer):
             'seed_grant', 'tdg_grant',
             'grant_no_display', 'seed_grant_short', 'tdg_grant_short'
         ]
-        extra_kwargs = {
-            'seed_grant': {'required': False, 'allow_null': True},
-            'tdg_grant': {'required': False, 'allow_null': True},
-        }
+        
 
 
 # ✅ Commitment Serializer
 class CommitmentSerializer(GrantRelatedSerializer):
+    seed_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False)
+    tdg_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False )
     class Meta:
         model = Commitment
         fields = [
@@ -89,14 +92,19 @@ class CommitmentSerializer(GrantRelatedSerializer):
             'seed_grant', 'tdg_grant',
             'grant_no_display', 'seed_grant_short', 'tdg_grant_short'
         ]
-        extra_kwargs = {
-            'seed_grant': {'required': False, 'allow_null': True},
-            'tdg_grant': {'required': False, 'allow_null': True},
-        }
+        
 
 
 # ✅ SeedGrant Serializer (Simple - no FK relations)
 class SeedGrantSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source="short_no", read_only=True)
+    pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
+    faculty_department = serializers.CharField(source="faculty.department", read_only=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['id'] = instance.short_no
+        return data
     class Meta:
         model = SeedGrant
         fields = '__all__'
@@ -104,6 +112,14 @@ class SeedGrantSerializer(serializers.ModelSerializer):
 
 # ✅ TDGGrant Serializer (Simple - no FK relations)
 class TDGGrantSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source="short_no", read_only=True)
+    pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
+    faculty_department = serializers.CharField(source="faculty.department", read_only=True)
+    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['id'] = instance.short_no
+        return data
     class Meta:
         model = TDGGrant
         fields = '__all__'
@@ -123,7 +139,7 @@ class FundRequestSerializer(serializers.ModelSerializer):
             'id', 
             'faculty', 
             'faculty_username',
-            'faculty_name', 
+            'pi_name', 
             'faculty_id',
             'project', 
             'seed_grant', 
@@ -143,7 +159,7 @@ class FundRequestSerializer(serializers.ModelSerializer):
 
         read_only_fields = [
             'faculty', 
-            'faculty_name', 
+            'pi_name', 
             'faculty_id',
             'project', 
             'seed_grant', 
@@ -176,9 +192,11 @@ class FundRequestSerializer(serializers.ModelSerializer):
             return value
     
 class BillInwardSerializer(serializers.ModelSerializer):
-     
-    
-    
+    id = serializers.CharField(read_only=True) 
+    faculty = serializers.SlugRelatedField(slug_field="faculty_id", queryset=Faculty.objects.all())
+    tds_section = serializers.PrimaryKeyRelatedField(queryset=TDSSection.objects.all(), allow_null=True, required=False)
+    tds_rate = serializers.PrimaryKeyRelatedField(queryset=TDSRate.objects.all(), allow_null=True, required=False)
+    pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     # Optional: Display fields for better UI (read-only)
     faculty_id_display = serializers.CharField(source='faculty.faculty_id',  read_only=True, required=False)
     
@@ -199,4 +217,17 @@ class BillInwardSerializer(serializers.ModelSerializer):
         if obj.whom_to:
             return obj.whom_to.get_full_name() or obj.whom_to.username
         return None
-            
+    
+class PaymentSerializer(serializers.ModelSerializer):
+    pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
+    tds_section = serializers.IntegerField(source="tds_section.id", read_only=False,allow_null=True)
+    tds_rate = serializers.IntegerField(source="tds_rate.id", read_only=False, allow_null=True)
+
+    class Meta:
+        model = Payment
+        fields = '__all__'            
+
+class ReceiptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Receipt
+        fields = '__all__'

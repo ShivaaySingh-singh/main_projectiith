@@ -1,5 +1,5 @@
 from import_export import resources, fields
-from .models import Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment
+from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment,Payment, ReceiptHead, TDSSection, TDSRate
 from import_export.widgets import DateWidget, ForeignKeyWidget
 from datetime import datetime, date
 import xlrd
@@ -96,25 +96,50 @@ class ZeroIfBlankWidget:
 
 # ✅ Project Resource
 class ProjectResource(resources.ModelResource):
+    project_short_no = fields.Field(column_name="Project Short No", attribute="project_short_no")
     project_no = fields.Field(column_name="Project No.", attribute="project_no")
-    project_title = fields.Field(column_name="Project Title", attribute="project_title")
+    gender = fields.Field(column_name="Gender", attribute="gender")
+    project_type = fields.Field(column_name="Project Type", attribute="project_type")
+    project_start_date = fields.Field(column_name="Start Date", attribute="start_date", widget=FlexibleDateWidget())
+    project_end_date = fields.Field(column_name="End Date", attribute="end_date", widget=FlexibleDateWidget())
+    is_extended = fields.Field(column_name="Is Extended", attribute="is_extended")
+    extended_end_date = fields.Field(column_name="Extended End Date", attribute="extended_end_date",widget=FlexibleDateWidget())
+    project_status = fields.Field(column_name="Status", attribute="project_status")
     pi_name = fields.Field(column_name="PI Name", attribute="pi_name")
     faculty_id = fields.Field(column_name="Faculty ID", attribute="faculty_id")
+    co_pi_name = fields.Field(column_name="Co PI Name", attribute="co_pi_name")
     pi_email = fields.Field(column_name="PI Email ID", attribute="pi_email")
+    fellow_student_name = fields.Field(column_name="Fellow/Student Name", attribute="fellow_student_name")
     department = fields.Field(column_name="Department", attribute="department")
+    project_title = fields.Field(column_name="Project Title", attribute="project_title")
+    country = fields.Field(column_name="Country", attribute="country")
+    sponsoring_agency = fields.Field(column_name="Sponsoring Agency", attribute="sponsoring_agency")
+    address_sponsoring_agency = fields.Field(column_name="Address of Sponsoring Agency", attribute="address_sponsoring_agency")
+    pincode = fields.Field(column_name="Pincode", attribute="pincode")
+    gst_no = fields.Field(column_name="GST No", attribute="gst_no")
     sanction_no = fields.Field(column_name="Sanction No.", attribute="sanction_no")
     sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=FlexibleDateWidget())
-    start_date = fields.Field(column_name="Start Date", attribute="start_date", widget=FlexibleDateWidget())
-    end_date = fields.Field(column_name="End Date", attribute="end_date", widget=FlexibleDateWidget())
+    amount_to_be_received = fields.Field(column_name="Amount to be Received", attribute="amount_to_be_received")
+    total_non_recurring = fields.Field(column_name="Total Non-Recurring", attribute="total_non_recurring")
+    total_recurring = fields.Field(column_name="Total Recurring", attribute="total_recurring")
+
+    # Bank & Remarks
+    bank_name_account = fields.Field(column_name="Bank Name & A/C No", attribute="bank_name_account")
+    remarks = fields.Field(column_name="Remarks", attribute="remarks")
 
     class Meta:
         model = Project
         import_id_fields = ["project_no"]
         skip_unchnaged = True
         fields = (
-            "project_no", "project_title", "pi_name", "pi_email", "faculty_id",
-            "department", "sanction_no", "sanction_date",
-            "start_date", "end_date"
+            "project_short_no", "project_no", "gender", "project_type", "faculty_id",
+            "pi_name", "co_pi_name", "pi_email", "department", "project_title",
+            "gst_no", "address_sponsoring_agency", "pincode", "sponsoring_agency", "country",
+            "project_start_date", "project_end_date", "is_extended", "extended_end_date", "project_status",
+            "fellow_student_name", "scheme_code", "scheme_name",
+            "sanction_number", "sanction_date", "sanction_amount",
+            "amount_to_be_received", "total_non_recurring", "total_recurring",
+            "bank_name_account", "remarks",
         )
 
 
@@ -125,23 +150,29 @@ class ReceiptResource(resources.ModelResource):
         attribute="project",
         widget=resources.widgets.ForeignKeyWidget(Project, "project_no")
     )
+    receipt_date = fields.Field(
+        column_name="Date", attribute="reciept_date", widget=FlexibleDateWidget()
+    )
+    fy = fields.Field(column_name="Financial Year", attribute="fy")
     category = fields.Field(column_name="Category", attribute="category")
+    reference_number = fields.Field(column_name="Reference Number", attribute="reference_number")
     amount = fields.Field(column_name="Sanction Amount", attribute="amount")
-    receipt = fields.Field(column_name="Receipt", attribute="receipt")
-    payments = fields.Field(column_name="Payments", attribute="payments")
-    balance = fields.Field(column_name="Balance", attribute="balance")
+    head = fields.Field(column_name="Head", attribute="head", widget=ForeignKeyWidget(ReceiptHead, "name"))
+    
 
     class Meta:
         model = Receipt
-        fields = ("project", "category", "amount", "receipt", "payments", "balance")
+        import_id_fields = ["project", "receipt_date", "head", "amount"]
+
+        fields = ("project", "receipt_date", "fy", "category", "reference_number", "head", "amount",)
         export_order = fields
 
 
 class SeedGrantResource(resources.ModelResource):
     short_no = fields.Field(column_name="Seed grant short no", attribute="short_no")
     grant_no = fields.Field(column_name="Seed Grant no", attribute="grant_no")
-    faculty_id = fields.Field(column_name="Faculty ID", attribute="faculty_id")
-    name = fields.Field(column_name="Name", attribute="name")
+    faculty = fields.Field(column_name="Faculty ID", attribute="faculty", widget=ForeignKeyWidget(Faculty, 'faculty_id'))
+    pi_name = fields.Field(column_name=" PI Name", attribute="pi_name")
     dept = fields.Field(column_name="Dept", attribute="dept")
     title = fields.Field(column_name="Title", attribute="title")
     sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=FlexibleDateWidget())
@@ -164,7 +195,7 @@ class SeedGrantResource(resources.ModelResource):
         import_id_fields = ["grant_no"]
         skip_unchanged = True
         fields =(
-            "grant_no", "short_no", "name", "dept", "title", "faculty_id",
+            "grant_no", "short_no", "pi_name", "dept", "title", "faculty",
             "sanction_date", "end_date", "budget_year1", "budget_year2",
             "total_budget", "equipment", "consumables", "contingency",
             "travel", "manpower", "others", "furniture",
@@ -172,15 +203,22 @@ class SeedGrantResource(resources.ModelResource):
 
         )
         export_order = fields
-        
 
+    def dehydrate_pi_name(self, obj):
+        return obj.faculty.pi_name if obj.faculty else ""
+    
+    def dehydrate_dept(self, obj):
+        return obj.faculty.department if obj.faculty else ""
+        
+    def dehydrate_faculty(self, obj):
+        return obj.faculty.faculty_id if obj.faculty else ""
 
 
 class TDGGrantResource(resources.ModelResource):
     short_no = fields.Field(column_name="Technology Development short no", attribute="short_no")
     grant_no = fields.Field(column_name="Technology Development Grant no", attribute="grant_no")
-    faculty_id = fields.Field(column_name="Faculty ID", attribute="faculty_id")
-    name = fields.Field(column_name="Name", attribute="name")
+    faculty = fields.Field(column_name="Faculty ID", attribute="faculty", widget=ForeignKeyWidget(Faculty, 'faculty_id'))
+    pi_name = fields.Field(column_name=" PI Name", attribute="pi_name")
     dept = fields.Field(column_name="Dept", attribute="dept")
     title = fields.Field(column_name="Title", attribute="title")
     sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=FlexibleDateWidget())
@@ -202,7 +240,7 @@ class TDGGrantResource(resources.ModelResource):
         import_id_fields = ["grant_no"]
         skip_unchanged = True
         fields =(
-            "grant_no", "short_no", "name", "dept", "title", "faculty_id",
+            "grant_no", "short_no", "pi_name", "dept", "title", "faculty",
             "sanction_date", "end_date", "budget_year1", "budget_year2",
             "total_budget", "equipment", "consumables", "contingency",
             "travel", "manpower", "others", "furniture",
@@ -210,6 +248,15 @@ class TDGGrantResource(resources.ModelResource):
 
         )
         export_order = fields
+
+        def dehydrate_pi_name(self, obj):
+            return obj.faculty.pi_name if obj.faculty else ""
+    
+        def dehydrate_dept(self, obj):
+            return obj.faculty.department if obj.faculty else ""
+        
+        def dehydrate_faculty(self, obj):
+            return obj.faculty.faculty_id if obj.faculty else ""
 
 
 
@@ -345,3 +392,80 @@ class CommitmentResource(resources.ModelResource):
             "particulars", "gross_amount", "remarks"
         )
         export_order = ("date","short_no", "grant_no", "head", "particulars", "gross_amount", "remarks")
+
+
+class PaymentResource(resources.ModelResource):
+    project = fields.Field(column_name="Project No", attribute="project", widget=ForeignKeyWidget(Project, "project_no"))
+    head = fields.Field(column_name="Head", attribute="head", widget=ForeignKeyWidget(ReceiptHead, "name"))
+    tds_section = fields.Field(column_name="Tax U/S", attribute="tds_section", widget=ForeignKeyWidget(TDSSection, "section"))
+    
+    tds_rate = fields.Field(
+        column_name="TDS %",
+        attribute="tds_rate",
+        widget=ForeignKeyWidget(TDSRate, "rate")   # update according to your model
+    )
+
+    # Date field
+    date = fields.Field(
+        column_name="Date",
+        attribute="date",
+        widget=FlexibleDateWidget()
+    )
+
+    # Normal fields
+    payment_type = fields.Field(column_name="Payment Type", attribute="payment_type")
+    name_of_payee = fields.Field(column_name="Payee Name", attribute="name_of_payee")
+
+    bank_name = fields.Field(column_name="Bank Name", attribute="bank_name")
+    branch = fields.Field(column_name="Branch", attribute="branch")
+    account_no = fields.Field(column_name="Account No", attribute="account_no")
+    ifsc = fields.Field(column_name="IFSC", attribute="ifsc")
+
+    utr_no = fields.Field(column_name="UTR No", attribute="utr_no")
+    faculty_id = fields.Field(column_name="Faculty ID", attribute="faculty_id", widget=ForeignKeyWidget(Faculty, 'faculty_id'))
+    pi_name = fields.Field(column_name="PI Name", attribute="pi_name")
+
+    tds_amount = fields.Field(column_name="TDS Amount", attribute="tds_amount")
+
+    gst_tds_type = fields.Field(column_name="GST-TDS Type", attribute="gst_tds_type")
+    igst_tds = fields.Field(column_name="IGST-TDS", attribute="igst_tds")
+    cgst_tds = fields.Field(column_name="CGST-TDS", attribute="cgst_tds")
+    sgst_tds = fields.Field(column_name="SGST-TDS", attribute="sgst_tds")
+
+    net_amount = fields.Field(column_name="Net Amount", attribute="net_amount")
+    purpose = fields.Field(column_name="Purpose", attribute="purpose")
+
+    class Meta:
+        model = Payment
+        import_id_fields = ["id"]     # safest choice (reference/utr blank ho sakta)
+        skip_unchanged = True
+        fields = (
+            "id",
+            "date",
+            "project",
+            "head",
+            "payment_type",
+            "name_of_payee",
+            "bank_name",
+            "branch",
+            "account_no",
+            "ifsc",
+            "utr_no",
+            "faculty_id",
+            "pi_name",
+            "tds_section",
+            "tds_rate",
+            "tds_amount",
+            "gst_tds_type",
+            "igst_tds",
+            "cgst_tds",
+            "sgst_tds",
+            "net_amount",
+            "purpose",
+        )
+    def dehydrate_pi_name(self, obj):
+        return obj.faculty.pi_name if obj.faculty else ""
+ 
+        
+    def dehydrate_faculty(self, obj):
+        return obj.faculty.faculty_id if obj.faculty else ""

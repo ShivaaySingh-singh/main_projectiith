@@ -9,6 +9,13 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.conf import settings
 from django.urls import reverse
+import threading
+
+
+def send_async(func, *args, **kwargs):
+    t = threading.Thread(target=func, args=args, kwargs=kwargs)
+    t.daemon = True
+    t.start()
 
 
 def generate_random_password(length=8):

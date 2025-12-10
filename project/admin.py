@@ -18,14 +18,14 @@ import json  #  ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant,
-    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate
+    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead
 )
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
-    TDGGrantResource, ExpenditureResource, CommitmentResource
+    TDGGrantResource, ExpenditureResource, CommitmentResource, PaymentResource
 )
 
-from .utils import generate_random_password, send_credentials_email
+from .utils import send_async, generate_random_password, send_credentials_email
 from django.contrib import messages
 
 HEADS = [
@@ -72,6 +72,7 @@ class ExcelViewMixin:
         model_name = self.model.__name__
         fields_config = self.get_excel_fields_config()
         context_data = self.get_excel_context_data()
+        context_data['primary_key_field'] = self.get_primary_key_field()
         json_keys = [
             'seed_grants', 'tdg_grants',
             'admin_users', 'tds_sections', 'tds_rates',
@@ -144,6 +145,12 @@ class ExcelViewMixin:
         
         return fields
     
+    def get_primary_key_field(self):
+        model_name = self.model._meta.model_name
+        if model_name in ['seedgrant', 'tdggrant']:
+            return 'short_no'
+        return 'id'
+    
     def get_field_width(self, field):
         """Auto-calculate column width based on field type"""
         field_type = field.get_internal_type()
@@ -195,7 +202,7 @@ class CustomAdminSite(admin.AdminSite):
         """Custom grouping for admin sidebar"""
         custom_groups = {
             'Seed Grant': ['SeedGrant', 'TDGGrant', 'Expenditure', 'Commitment'],
-            'Project Master': ['Project', 'Receipt'],
+            'Project Master': ['Project', 'Receipt', 'ReceiptHead','Payment'],
             'User Management': ['CustomUser', 'Faculty', 'Group'],
             'Fund Request': ['FundRequest'],
             'Inward' : ['BillInward'],
@@ -325,6 +332,20 @@ class FacultyInline(admin.StackedInline):
     fk_name = "user"
     extra = 0
 
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+
+        required_fields = ['faculty_id', 'pi_name', 'email', 'designation', 'department']
+        for field_name in required_fields:
+            if field_name in formset.form.base_fields:
+                formset.form.base_fields[field_name].required = True
+        
+        if 'photo' in formset.form.base_fields:
+            formset.form.base_fields['photo'].required = False
+
+        return formset 
+
+
 
 class CustomUserAdmin(BaseUserAdmin):
     add_form = CustomUserCreationForm
@@ -356,6 +377,26 @@ class CustomUserAdmin(BaseUserAdmin):
     list_filter = ("is_staff", "is_superuser", "is_active", "groups")
     filter_horizontal = ("groups", "user_permissions")
 
+    def get_inline_instances(self, request, obj=None):
+        """
+        Admin/Sheet role me Faculty inline HIDE 
+        Faculty role  me faculty inline SHOW
+        """
+        inline_instances = []
+
+        if obj is None:
+            return super().get_inline_instances(request, obj)
+        
+        #Existing user edit kar rhe ho  sirf faculty role me inline dikhao 
+        if obj.role == 'faculty':
+            inline_instances = super().get_inline_instances(request, obj)
+        #Admin/sheet role me inline mat dikhao 
+        else:
+            inline_instances = []
+
+        return inline_instances
+
+
     def save_model(self, request, obj, form, change):
         if not change:
             if 'password1' in form.cleaned_data and form.cleaned_data['password1']:
@@ -367,16 +408,49 @@ class CustomUserAdmin(BaseUserAdmin):
             super().save_model(request, obj, form, change)
 
             if obj.email:
-                email_sent = send_credentials_email(obj, password, request)
-                if email_sent:
-                    messages.success(request, f'User "{obj.username}" created successfully. Credentials sent to {obj.email}')
-                else:
-                    messages.warning(request, f'User "{obj.username}" created but email failed. Password: {password}')
+                send_async(send_credentials_email, obj, password, request)
+                
+                messages.success(request, f'User "{obj.username}" created successfully. Credentials sent to {obj.email}')
             else:
-                messages.warning(request, f'User "{obj.username}" created but no email provided. Password: {password}')
-        else:
-            super().save_model(request, obj, form, change)
+                messages.warning(request, f'User "{obj.username}" created but no email provided. Password: {password}')   
+                    
+    def save_formset(self, request, form, formset, change):
+        """ Faculty details Validation"""
+        instances = formset.save(commit=False)
+        user = form.instance
 
+        if user.role == 'faculty':
+            if not instances or len(instances) == 0:
+                messages.error(request, "faculty role requires all faculty details to be filled!")
+                return
+            
+            faculty = instances[0]
+            required_fields = {
+                'faculty_id': 'Faculty ID',
+                'pi_name': 'PI Name',
+                'email': 'Email',
+                'designation': 'Designation',
+                'department': 'Department'
+            }
+
+            missing = []
+            for field, label in required_fields.items():
+                if not getattr(faculty, field, None):
+                    missing.append(label)
+            
+            if missing:
+                messages.error(
+                    request, f"Missing required fields: {', '.join(missing)}"
+                )
+                return
+        elif user.role in ['admin', 'sheet']:
+            Faculty.objects.filter(user=user).delete()
+            messages.info(request, "Faculty details removed (not appliacble for this row)")
+            return
+        
+        for instance in instances:
+            instance.save()
+        formset.save_m2m()
 
 # =============================================================================
 # 🆕 Model Admins with Excel View Mixin
@@ -390,44 +464,67 @@ class ProjectAdmin(ExcelViewMixin, ImportExportModelAdmin):
         - Excel View: ✅ (from ExcelViewMixin)
     """
     resource_class = ProjectResource
-    list_display = ("project_no", "project_title", "start_date", "end_date", "pi_name")
-    search_fields = ("project_no", "project_title", "pi_name")
+    list_display = ("project_no", "project_title", "project_start_date", "project_end_date", "get_pi_name", "project_status", "sanction_amount",)
+    search_fields = ("project_no", "project_title", "faculty__pi_name",)
+    readonly_fields = ("project_status",)
+
+    def get_pi_name(self, obj):
+        if obj.faculty:
+            return obj.faculty.pi_name
+        return obj.pi
+    get_pi_name.short_description = "PI Name"
+
     
     # ✅ No extra configuration needed - Excel View automatically works!
 
 
 class ReceiptAdmin(ExcelViewMixin, ImportExportModelAdmin):
     resource_class = ReceiptResource
-    list_display = ("project", "category", "amount", "equipment", "manpower", "consumables")
+    list_display = ("project", "category", "amount", "head")
     search_fields = ("project__project_no", "category")
 
 
 class SeedGrantAdmin(ExcelViewMixin, ImportExportModelAdmin):
     resource_class = SeedGrantResource
-    list_display = ("grant_no", "short_no", "name", "dept", "total_budget")
-    search_fields = ("grant_no", "short_no", "name")
 
+    readonly_fields = ("pi_name", "dept")
+
+    list_display = ("grant_no", "short_no", "faculty_pi", "faculty_dept", "total_budget")
+    search_fields = ("grant_no", "short_no", "faculty__pi_name", "faculty__department")
+    excel_exclude_fields = []
+    def get_excel_context_data(self):
+        return {
+            'faculties': list(Faculty.objects.values(
+                'faculty_id', 'pi_name', 'department'
+            ))
+        }
+            
+    def faculty_pi(self,obj):
+        return obj.faculty.pi_name if obj.faculty else "-"
+    
+    def faculty_dept(self,obj):
+        return obj.faculty.department if obj.faculty else "-"
 
 class TDGGrantAdmin(ExcelViewMixin, ImportExportModelAdmin):
     resource_class = TDGGrantResource
-    list_display = ("grant_no", "short_no", "name", "dept", "total_budget")
-    search_fields = ("grant_no", "short_no", "name")
+    readonly_fields = ("pi_name","dept")
+    
+    list_display = ("grant_no", "short_no", "faculty_pi", "faculty_dept", "total_budget")
+    search_fields = ("grant_no", "short_no", "faculty__pi_name", "faculty__department")
+    excel_exclude_fields = []
 
-class ProjectAdmin(ExcelViewMixin, ImportExportModelAdmin):
-    resource_class = ProjectResource
-    list_display = (
-        'project_short_no',
-        'project_no',
-        'pi_name',
-        'project_title',
-        'project_start_date',
-        'project_end_date',
-        'project_status',
-        'sanction_amount',
-    )
-    search_fields = ('project_short_no', 'project_no', 'pi_name', 'project_title')
-    list_filter = ('project_status', 'gender', 'project_type', 'department')
-    readonly_fields = ('project_status',)
+    def get_excel_context_data(self):
+        return {
+            'faculties': list(Faculty.objects.values(
+                'faculty_id', 'pi_name', 'department'
+            ))
+        }
+    def faculty_pi(self,obj):
+        return obj.faculty.pi_name if obj.faculty else "-"
+    
+    def faculty_dept(self,obj):
+        return obj.faculty.department if obj.faculty else "-"
+
 
 
 # ✅ Models with Grant Relations (Need extra configuration)
@@ -460,8 +557,8 @@ class ExpenditureAdmin(ExcelViewMixin, ImportExportModelAdmin):
         JavaScript template will use this data
         """
         return {
-            'seed_grants': list(SeedGrant.objects.values('short_no', 'grant_no', 'name')),
-            'tdg_grants': list(TDGGrant.objects.values('short_no', 'grant_no', 'name')),
+            'seed_grants': list(SeedGrant.objects.values('short_no', 'grant_no', 'pi_name')),
+            'tdg_grants': list(TDGGrant.objects.values('short_no', 'grant_no', 'pi_name')),
             'heads': HEADS,  # Convert list to JSON string
         }
 
@@ -481,17 +578,17 @@ class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
     
     def get_excel_context_data(self):
         return {
-            'seed_grants': list(SeedGrant.objects.values('short_no', 'grant_no', 'name')),
-            'tdg_grants': list(TDGGrant.objects.values('short_no', 'grant_no', 'name')),
+            'seed_grants': list(SeedGrant.objects.values('short_no', 'grant_no', 'pi_name')),
+            'tdg_grants': list(TDGGrant.objects.values('short_no', 'grant_no', 'pi_name')),
             'heads': json.dumps(HEADS),
         }
 
 class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
-    list_display = ['date','faculty_name','get_faculty_id','project_no','amount','tds_section','tds_rate','tds_amount','net_amount','under_head','get_assigned_to','status_badge','outward_date']
+    list_display = ['date','pi_name','get_faculty_id','project_no','amount','tds_section','tds_rate','tds_amount','net_amount','under_head','get_assigned_to','status_badge','outward_date']
 
     list_filter = ['bill_status', 'date', 'whom_to', 'under_head','faculty']
     search_fields = [
-        'faculty_name',
+        'pi_name',
         'faculty__pi_name',
         'faculty__faculty_id',
         'project_no',
@@ -509,6 +606,9 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
     def get_faculty_id(self, obj):
         return obj.faculty.faculty_id if obj.faculty else "_"
     get_faculty_id.short_description = "Faculty ID"
+
+    def faculty_name(self,obj):
+        return obj.faculty.pi_name if obj.faculty else "-"
     
 
     def get_assigned_to(self, obj):
@@ -614,8 +714,8 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
                 'help_text': 'Select Faculty ID - Name will auto-fill'
             },
             {
-                'name': 'faculty_name',
-                'label': 'Faculty Name',
+                'name': 'pi_name',
+                'label': 'PI Name',
                 'type': 'CharField',
                 'editable': True,  # ✅ Changed to True - manual entry allowed
                 'required': False,
@@ -765,8 +865,8 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
             ]),
             'faculties': json.dumps([
                 {
-                    'id': f.id,
-                    'name': f'{f.pi_name} ({f.faculty_id})',
+                    'faculty_id': f.faculty_id,
+                    'pi_name': f'{f.pi_name} ({f.faculty_id})',
                     'faculty_id': f.faculty_id
                 }
                 for f in Faculty.objects.all().order_by('pi_name')
@@ -829,7 +929,7 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
         
         # Auto-populate faculty_name from Faculty FK if selected
         if obj.faculty:
-            obj.faculty_name = obj.faculty.pi_name
+            obj.pi_name = obj.faculty.pi_name
         # If faculty_name is manually entered, keep it as is
         # (no change needed, it's already set by user)
         if obj.tds_rate and obj.amount:
@@ -841,6 +941,59 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
         
         super().save_model(request, obj, form, change)
 
+class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
+    resource_class = PaymentResource
+
+    list_display = ("date","project","head","payment_type","name_of_payee","utr_no","faculty","net_amount")
+
+    list_filter = ("payment_type",
+        "head",
+        "gst_tds_type",
+        "tds_section",
+        "tds_rate",
+        "date",
+
+    )
+    search_fields = (
+        "project__project_no",
+        "name_of_payee",
+        "utr_no",
+        "faculty",
+        "account_no",
+        "ifsc",
+    )
+    excel_exclude_fields = ["id"]
+
+    def get_excel_context_data(self):
+        return{
+            'faculties': list(
+                Faculty.objects.values(
+                    'faculty_id', 'pi_name'
+                )
+            ),
+
+            "tds_sections": [
+                {
+                
+                    "id": s.id,
+                    "code": s.section,
+                }
+                for s in TDSSection.objects.all().order_by("section")
+
+            ],
+
+            "tds_rates": [
+                {
+                    "id": r.id,
+                    "section_id": r.section_id,
+                    "percent": float(r.percent)
+                }
+                for r in TDSRate.objects.select_related("section")
+            ],
+
+        }
+
+    
 
 # =============================================================================
 # Register Models with Custom Admin Site
@@ -855,6 +1008,8 @@ custom_admin_site.register(Commitment, CommitmentAdmin)
 custom_admin_site.register(Project, ProjectAdmin)
 custom_admin_site.register(Receipt, ReceiptAdmin)
 custom_admin_site.register(BillInward, BillInwardAdmin)
+custom_admin_site.register(Payment, PaymentAdmin)
+
 
 # 👥 User Management Group
 custom_admin_site.register(CustomUser, CustomUserAdmin)
@@ -868,7 +1023,7 @@ from .models import FundRequest
 
 class FundRequestAdmin(ExcelViewMixin, admin.ModelAdmin):
     list_display = [
-        'faculty_name', 
+        'pi_name', 
         'faculty_id',
         'request_date', 
         'project_no', 
@@ -882,7 +1037,7 @@ class FundRequestAdmin(ExcelViewMixin, admin.ModelAdmin):
     list_filter = ['status', 'request_date', 'head']
     
     search_fields = [
-        'faculty_name', 
+        'pi_name', 
         'faculty_id', 
         'project_no', 
         'short_no',
@@ -892,7 +1047,7 @@ class FundRequestAdmin(ExcelViewMixin, admin.ModelAdmin):
     
     fieldsets = (
         ('Faculty Information', {
-            'fields': ('faculty', 'faculty_name', 'faculty_id')
+            'fields': ('faculty', 'pi_name', 'faculty_id')
         }),
         ('Project Details', {
             'fields': (
@@ -970,5 +1125,52 @@ class TDSRateAdmin(admin.ModelAdmin):
     list_filter = ("section",)
     search_fields = ("section__section",)
 
+class ReceiptHeadAdmin(admin.ModelAdmin):
+    list_display = ("id", "name")
+    list_filter = ("name",)
+    search_fields = ("name",)
+
+
 custom_admin_site.register(TDSSection, TDSSectionAdmin)
 custom_admin_site.register(TDSRate, TDSRateAdmin)
+custom_admin_site.register(ReceiptHead, ReceiptHeadAdmin)
+
+class ReceiptAdmin(ExcelViewMixin, admin.ModelAdmin):
+    list_display = ("receipt_date", "project", "head", "amount", "category", "refrence_number")
+
+    search_fields = ("project__project_no", "category", "reference_number")
+
+    autocomplete_fields = ["project"]
+
+    excel_exclude_fields = ['id']
+
+    def save_model(self, request, obj, form, change):
+        obj.clean()  # run final_end_date validation
+        super().save_model(request, obj, form, change)
+
+    def get_excel_context_data(self):
+        """
+        Excel grid ke liye:
+        - Project list -> autocomplete + end_date validation
+        - ReceiptHead list -> dropdown
+        """
+
+        projects = list(
+            Project.objects.values(
+                "id",
+                "project_no",
+                "project_end_date",
+                "extended_end_date",
+                "is_extended"
+            )
+        )
+
+        heads = list(
+            ReceiptHead.objects.values("id", "name")
+        )
+
+        return {
+            "projects": projects,    # AG-Grid me autocomplete + validation
+            "heads": heads,          # AG-Grid dropdown
+        }
+

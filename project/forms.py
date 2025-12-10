@@ -27,9 +27,9 @@ class FundRequestForm(forms.ModelForm):
 
     class Meta:
         model = FundRequest
-        fields = ['faculty_name', 'short_no', 'head', 'particulars', 'amount']
+        fields = ['pi_name', 'short_no', 'head', 'particulars', 'amount']
         widgets = {
-            'faculty_name': forms.TextInput(attrs={'class': 'form-control', 'readonly': True}),
+            'pi_name': forms.TextInput(attrs={'class': 'form-control', 'readonly': True}),
             'short_no': forms.TextInput(attrs={'class': 'form-control'}),
             'head': forms.TextInput(attrs={'class': 'form-control'}),
             'particulars': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
@@ -41,7 +41,7 @@ class FundRequestForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         if user and hasattr(user, 'faculty'):
-            self.fields['faculty_name'].initial = user.faculty.pi_name
+            self.fields['pi_name'].initial = user.faculty.pi_name
 
 
 

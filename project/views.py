@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponseRedirect, JsonResponse
 from django.core.serializers.json import DjangoJSONEncoder
-from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward
+from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment
 from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
 import re
@@ -16,7 +16,7 @@ from django.db.models import Q
 from .forms import FundRequestForm, AdminRemarkForm
 
 from .serializers import (
-    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer,ProjectSerializer,BillInwardSerializer
+    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer,ProjectSerializer,BillInwardSerializer,PaymentSerializer,ReceiptSerializer
 )
 
 
@@ -286,7 +286,7 @@ def bill_report_admin(request):
     # 🔹 Fallback: empty default grant if none selected
     if not selected_grant:
         selected_grant = SeedGrant(
-            name="", dept="", title="", grant_no="",
+            pi_name="", dept="", title="", grant_no="",
             budget_year1=None, budget_year2=None, total_budget=None
         )
 
@@ -354,7 +354,7 @@ def get_seed_grant_details(request):
 
 
     data = {
-        "name": grant.name,
+        "name": grant.pi_name,
         "dept": grant.dept,
         "title": grant.title,
         "grant_no": grant.grant_no,
@@ -405,6 +405,8 @@ class GenericModelAPIView(APIView):
         'fundrequest': (FundRequest, FundRequestSerializer),
         'project': (Project, ProjectSerializer),
         'billinward': (BillInward, BillInwardSerializer),
+        'payment': (Payment, PaymentSerializer),
+        'receipt': (Receipt, ReceiptSerializer)
     }
 
     def get_model_and_serializer(self, model_name):
@@ -657,6 +659,10 @@ def inward_bills_view(request):
     
     except Faculty.DoesNotExist:
         return redirect('dashboard')
+
+ 
+
+
 
 
     
