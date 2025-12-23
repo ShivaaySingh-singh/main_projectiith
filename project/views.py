@@ -466,6 +466,9 @@ class GenericModelDetailAPIView(APIView):
             return None
 
         try:
+            # SeedGrant & TDG Grant short_no se lookup 
+            if model_name.lower() in ['seedgrant', 'tdggrant']:
+                return Model.objects.get(short_no=pk)
             if model_name.lower() in ['expenditure', 'commitment']:
                 return Model.objects.select_related('seed_grant', 'tdg_grant').get(pk=pk)
 

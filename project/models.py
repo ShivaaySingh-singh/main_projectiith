@@ -365,6 +365,12 @@ class SeedGrant(models.Model):
     visitor_expenses = models.DecimalField(max_digits=12, decimal_places=2, default=0, null=True, blank=True)
     lab_equipment = models.DecimalField(max_digits=12, decimal_places=2, default=0, null=True, blank=True)
 
+    def save(self, *args, **kwargs):
+        if self.faculty:
+            self.pi_name = self.faculty.pi_name
+            self.dept = self.faculty.department
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Seed {self.grant_no} - {self.pi_name}"
     
@@ -398,6 +404,12 @@ class TDGGrant(models.Model):
     others = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     furniture = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
+    def save(self, *args, **kwargs):
+        if self.faculty:
+            self.pi_name = self.faculty.pi_name
+            self.dept = self.faculty.department
+        super().save(*args, **kwargs)
+    
     def __str__(self):
         return f"TDG {self.grant_no} - {self.pi_name}"
     

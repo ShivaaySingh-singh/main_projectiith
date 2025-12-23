@@ -17,28 +17,20 @@ class GrantRelatedSerializer(serializers.ModelSerializer):
         return ""
     
     def validate(self, data):
-        short_no = self.initial_data.get('short_no')
+        seed = self.initial_data.get('seed_grant')
+        tdg = self.initial_data.get('tdg_grant')
 
-        if not short_no:
-          raise serializers.ValidationError("short_no is required")
+        if not seed and not tdg:
+            raise serializers.ValidationError(
+                "Either seed_grant or tdg_grant is required"
+            )
         
-        if short_no.startswith("SG"):
-            try:
-                data['seed_grant'] = SeedGrant.objects.get(short_no=short_no)
-                data['tdg_grant'] = None
-                return data
-            except SeedGrant.DoesNotExist:
-                raise serializers.ValidationError("Invalid SeedGrant")
-            
-        if short_no.startswith("TDG"):
-            try:
-                data['tdg_grant'] = TDGGrant.objects.get(short_no=short_no)
-                data['seed_grant'] = None
-                return data
-            except TDGGrant.DoesNotExist:
-                 raise serializers.ValidationError("Invalid TDGGrant")
-            
-        raise serializers.ValidationError("short_no must begin with SG or TDG")
+        if seed and tdg:
+            raise serializers.ValidationError(
+                "Select only one grant type (Seed or TDG)"
+
+            )
+        return data 
 
 
 
@@ -69,7 +61,7 @@ class GrantRelatedSerializer(serializers.ModelSerializer):
 class ExpenditureSerializer(GrantRelatedSerializer):
     seed_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False)
 
-    tdg_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False)
+    tdg_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=TDGGrant.objects.all(), allow_null=True, required=False)
     
     class Meta:
         model = Expenditure
@@ -84,7 +76,7 @@ class ExpenditureSerializer(GrantRelatedSerializer):
 # ✅ Commitment Serializer
 class CommitmentSerializer(GrantRelatedSerializer):
     seed_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False)
-    tdg_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False )
+    tdg_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=TDGGrant.objects.all(), allow_null=True, required=False )
     class Meta:
         model = Commitment
         fields = [
@@ -97,32 +89,28 @@ class CommitmentSerializer(GrantRelatedSerializer):
 
 # ✅ SeedGrant Serializer (Simple - no FK relations)
 class SeedGrantSerializer(serializers.ModelSerializer):
-    id = serializers.CharField(source="short_no", read_only=True)
+    
     pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     faculty_department = serializers.CharField(source="faculty.department", read_only=True)
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        data['id'] = instance.short_no
-        return data
+    
     class Meta:
         model = SeedGrant
         fields = '__all__'
+        read_only_fields = ['short_no']
 
 
 # ✅ TDGGrant Serializer (Simple - no FK relations)
 class TDGGrantSerializer(serializers.ModelSerializer):
-    id = serializers.CharField(source="short_no", read_only=True)
+    
     pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     faculty_department = serializers.CharField(source="faculty.department", read_only=True)
     
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        data['id'] = instance.short_no
-        return data
+    
     class Meta:
         model = TDGGrant
         fields = '__all__'
+        read_only_fields = ['short_no']
 
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
