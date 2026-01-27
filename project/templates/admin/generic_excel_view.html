@@ -136,6 +136,12 @@
         align-items: center;
         gap: 6px;
     }
+
+    .cell-error {
+        background-color: #f8d7da !important;
+        color: #721c24 !important;
+        border: 2px solid #dc3545 !important;
+    }
     
     .btn:hover {
         transform: translateY(-1px);
@@ -216,6 +222,12 @@
     .ag-cell-inline-editing {
         background-color: #fff3cd !important;
         box-shadow: inset 0 0 0 2px #ffc107;
+    }
+
+    .cell-disabled {
+        background-color: #f1f1f1 !important;
+        color: #999 !important;
+        pointer-events: none;
     }
 </style>
 {% endblock %}
@@ -343,7 +355,10 @@
 
 <script>
     const MODEL_NAME = "{{ model_name }}";
-    const PRIMARY_KEY = "{{ primary_key_field }}";
+    const PRIMARY_KEY = "id";
+    window.heads = {{ heads|safe }};
+    window.projects = {{ projects|safe }};
+    window.faculties = {{ faculties|safe }};
     const ADMIN_USERS = {{ admin_users|safe }};
     const API_URL = `/api/${MODEL_NAME}/`;
     const FIELDS_CONFIG = {{ fields_config|safe }};
@@ -351,6 +366,12 @@
     const TDS_SECTIONS = {{ tds_sections|safe}};
     const TDS_RATES = {{tds_rates|safe}};
     const HAS_GRANTS = {{ has_grants|lower }};
+    window.payees = {{payees|safe}};
+    window.banks = {{banks|safe}};
+    window.payment_types = {{payment_types|safe}};
+
+    const ENABLE_GENERIC_FK_DROPDOWN = true;
+    const DATE_VALIDATION_MODELS = ["expenditure", "commitment"];
     
     {% if has_grants %}
     const SEED_GRANTS = {{ seed_grants|safe }};
@@ -375,8 +396,11 @@
         animateRows: true,
         enableCellChangeFlash: true,
         singleClickEdit: true,
+        enableBrowserTooltips: true,
         stopEditingWhenCellsLoseFocus: true,
-        onCellValueChanged: (e) => trackChange(e.data),
+        onCellValueChanged: (e) => {
+            trackChange(e.data);
+        },
         onSelectionChanged: updateStats,
         pagination: true,
         paginationPageSize: 100,
@@ -388,6 +412,123 @@
         loadData();
     });
     
+    let activeErrorPopup = null;
+
+    function showCellErrorPopup(params, message) {
+        removeCellErrorPopup();
+
+        let targetEl = null;
+
+        const instances = params.api.getCellRendererInstances({
+            rowNodes: [params.node],
+            columns: [params.column.getColId()]
+        });
+
+        if (instances && instances.length && instances[0].eGui) {
+            targetEl = instances[0].eGui;
+        }
+
+        if (!targetEl) {
+            const active = document.querySelector('.ag-cell-inline-editing, .ag-popup-editor');
+            if (active) {
+                targetEl = active;
+            }
+
+        }
+        if (!targetEl) {
+            const focused = document.querySelector('.ag-cell-focus');
+            if (focused) {
+                targetEl = focused;
+            }
+        }
+
+        if(!targetEl) return;
+
+
+        const rect = targetEl.getBoundingClientRect();
+
+        const popup = document.createElement("div");
+        popup.innerText = message;
+        
+
+        popup.style.position = "fixed";
+        popup.style.left = rect.left + "px";
+        popup.style.top = (rect.top - 36) + "px";
+        popup.style.background = "#dc3545";
+        popup.style.color = "white";
+        popup.style.padding = "6px 10px";
+        popup.style.borderRadius = "4px";
+        popup.style.fontWeight = "12px";
+        popup.style.fontWeight = "600";
+        popup.style.zIndex = 99999;
+        popup.style.boxShadow = "0 4px 10px rgba(0,0,0,0.3)";
+        popup.style.pointerEvents = "none";
+        popup.style.whiteSpace = "nowrap";
+
+        document.body.appendChild(popup);
+        activeErrorPopup = popup;
+    }
+
+    function removeCellErrorPopup() {
+        if (activeErrorPopup) {
+            activeErrorPopup.remove();
+            activeErrorPopup = null;
+        }
+    }
+   
+    function resolveEndDate(row) {
+        if (row.seed_grant_short) {
+            const g = SEED_GRANTS.find(x => String(x.short_no) === String(row.seed_grant_short));
+            if (g) {
+                return g.is_extended && g.extended_end_date_str
+                    ? g.extended_end_date_str
+                    : g.end_date_str;
+            }
+        }
+        if (row.tdg_grant_short) {
+            const g = TDG_GRANTS.find(x => String(x.short_no) === String(row.tdg_grant_short));
+            if (g) {
+                return g.is_extended && g.extended_end_date_str
+                    ? g.extended_end_date_str
+                    : g.end_date_str;
+            }
+        }
+
+        if(row.project) {
+            const p = window.projects.find(
+                x => String(x.project_short_no) === String(row.project)
+            );
+            if (p) {
+                return p.extended_end_date_str
+                    ? p.extended_end_date_str
+                    : p.end_date_str;
+
+            }
+        }
+
+        return null;
+    }
+
+    function validateDateForRow(row, newDate) {
+        const endDate = resolveEndDate(row);
+
+        if (!endDate) {
+            return {
+                ok: false,
+                message: "End date not found. Please select Project / Grant first."
+            };
+        }
+
+        if (new Date(newDate) > new Date(endDate)) {
+            return {
+                ok: false,
+                message: "Date cannot be after " + endDate
+            };
+        }
+
+        return { ok: true };
+    }
+    
     function buildColumnDefinitions() {
         const cols = [
             {
@@ -396,17 +537,48 @@
                 headerCheckboxSelection: true,
                 width: 50,
                 pinned: 'left'
-            },
+            },   
         ];
+        if (MODEL_NAME === "billinward"){
+            cols.push({
+                headerName: "Bill PDF",
+                field: "bill_pdf_url",
+                cellRenderer: params => {
+                    const url = params.data.bill_pdf_url;
+                    const canUpload = params.data.can_upload_pdf;
+                    const id = params.data.id;
+
+                    if(url) {
+                        let html = `<a href="${url}" target="_blank">View</a>`;
+
+                        if (canUpload) {
+                            html += ` | <button onclick="uploadPdf(${id})">Replace</button>`;
+                        }
+                        return html;
+                    }
+
+                    if (canUpload) {
+                        return `<button onclick="uploadPdf(${id})">Upload</button>`;
+                
+
+                
+                     
+                    }
+                    return "No File";
+                },
+                width: 120,
+                pinned: 'right'
+            });
+        }
         
 
              
 
         cols.push({
-            headerName: PRIMARY_KEY === 'short_no' ? 'Short No' : 'ID',
+            headerName: "ID",
             field: PRIMARY_KEY,
             width: 120,
-            editable: PRIMARY_KEY === 'short_no',
+            editable: params => params.data._isNew === true,
             pinned: 'left',
             cellStyle: {backgroundColor: '#f8f9fa', fontweight: 'bold'},
         });
@@ -461,20 +633,35 @@
                     if (type === 'Seed') {
                         const grant = SEED_GRANTS.find(g => g.short_no === shortNo);
                         if (grant) {
+
+                            if (grant.status === "EXPIRED") {
+                                alert("This project is expired. Please contact admin to extend it.")
+                                return false;
+                            }
                             params.data.seed_grant = grant.id;
                             params.data.seed_grant_short = shortNo;
                             params.data.grant_no_display = grant.grant_no;
                             params.data.tdg_grant = null;
                             params.data.tdg_grant_short = null;
+
+                            
+
+                           
                         }
                     } else {
                         const grant = (TDG_GRANTS || []).find(g => g.short_no === shortNo);
                         if (grant) {
+
+                            if(grant.status === "EXPIRED") {
+                                alert("This project is expired. Please contact admin to extend it.")
+                                return false;
+                            }
                             params.data.tdg_grant = grant.id;
                             params.data.tdg_grant_short = shortNo;
                             params.data.grant_no_display = grant.grant_no;
                             params.data.seed_grant = null;
                             params.data.seed_grant_short = null;
+                            
                         }
                     }
                     
@@ -493,6 +680,97 @@
         {% endif %}
         
         FIELDS_CONFIG.forEach(field => {
+            
+            if (field.name === "id") return;
+
+            if (field.name === PRIMARY_KEY) return;
+
+            if (field.name === "project_status") {
+                cols.push({
+                    headerName: field.label,
+                    field: "project_status",
+                    width: 140,
+                    editable: false,
+                    cellStyle: { backgroundColor: "#f1f1f1", color: "#555", fontWeight: "bold" }
+
+                });
+                return;
+            }
+
+            if (field.name === "extension_approved_by") {
+                cols.push({
+                    headerName: field.label,
+                    field: "extension_approved_by",
+                    width: 180,
+                    editable: false,
+                    cellStyle: { backgroundColor: "#f1f1f1", color: "#555" }
+
+                });
+                return;
+            }
+
+
+
+            if (field.name === "is_extended") {
+                cols.push({
+                    headerName: field.label,
+                    field: "is_extended",
+                    width: 120,
+                    editable: true,
+                    cellEditor: "agSelectCellEditor",
+                    cellEditorParams: {
+                        values: [true, false]
+                    },
+                    valueParser: params => params.newValue === "true",
+                    valueFormatter: p => p.value === true ? "Yes" : "No",
+                    onCellValueChanged: params => {
+                        if (params.data.is_extended !== true) {
+                            params.data.extended_end_date = null;
+                        }
+                        params.api.refreshCells({
+                            rowNodes: [params.node],
+                            columns: ["extended_end_date"],
+                            force:true
+                        });
+                        trackChange(params.data);
+                    }
+                });
+                return;
+            }
+
+            if (field.name === "extended_end_date") {
+                cols.push({
+                    headerName: field.label,
+                    field: "extended_end_date",
+                    width: field.width || 140,
+                    cellEditor: "agDateStringCellEditor",
+                    filter: "agDateColumnFilter",
+                    editable: params => params.data.is_extended === true,
+                    cellClassRules: {
+                        "cell-disabled": params => params.data.is_extended !== true
+                    }
+                });
+                return;
+            }
+
+            if (field.name === "extension_reason") {
+                cols.push({
+                    headerName: field.label,
+                    field: "extension_reason",
+                    width: field.width || 200,
+                    cellEditor: "agLargeTextCellEditor",
+                    cellEditorPopup: true,
+
+                    editable: params => params.data.is_extended === true,
+                    cellClassRules: {
+                        "cell-disabled": params => params.data.is_extended !== true
+                    }
+                });
+                return;
+            }
+
+
+
             if (field.name === 'PRIMARY_KEY' || field.name === 'seed_grant' || field.name === 'tdg_grant') {
                 return;
             }
@@ -578,6 +856,68 @@
                 return;
             }
 
+            
+
+            if (field.name === "payee_pan") {
+                cols.push({
+                    headerName: "PAN",
+                    field: "payee_pan",
+                    width: 250,
+                    editable: true,
+                    cellEditor: "agSelectCellEditor",
+                    cellEditorParams: {
+                        values: window.payees.map(p => String(p.pan))
+                    },
+                    
+
+                    
+                    valueSetter: params => {
+                        const pan = params.newValue;
+                        const p = window.payees.find(x => String(x.pan) === String(pan));
+
+                       
+
+                        if (!p) return false; 
+                        params.data.payee = p.id;
+                        
+
+                        params.data.payee_pan = p.pan;
+                        params.data.payee_bank_name = p.bank_name;
+                        params.data.payee_branch_name = p.branch;
+                        params.data.payee_account_no = p.account_number;
+                        params.data.payee_ifsc = p.ifsc;
+                            
+                        params.data.payee_email = p.email;
+                        
+
+                        trackChange(params.data);
+
+                        params.api.refreshCells({
+                            rowNodes: [params.node],
+                            columns: [
+                                "payee",
+                                "payee_pan",
+                                
+                                "payee_bank_name",
+                                "payee_branch_name",
+                                "payee_account_no",
+                                "payee_ifsc",
+                                
+                                "payee_email",
+                            ],
+                            force: true
+
+                        });
+
+                        return true;
+                    }
+                });
+                return
+            }
+
+                
+            
+
 
 
 
@@ -613,9 +953,58 @@
 
             }
             
-            if (field.type === 'DateField') {
+            if (
+                field.type === 'DateField' ) {
                 colDef.cellEditor = 'agDateStringCellEditor';
                 colDef.filter = 'agDateColumnFilter';
+
+                colDef.cellClassRules = {
+                    "cell-error": params => !!params.data._date_error
+                };
+                
+                
+
+                colDef.valueSetter = params => {
+                    const newDate = params.newValue;
+                    const oldDate = params.oldValue;
+
+                    params.data._date_error = null;
+
+                    if (newDate === oldDate) return false;
+
+                    if (!newDate) {
+                        params.data[field.name] = null;
+                        trackChange(params.data);
+                        return true;
+                    }
+                
+                    if (DATE_VALIDATION_MODELS.includes(MODEL_NAME)) {
+                        const result = validateDateForRow(params.data, newDate);
+                
+                        if (!result.ok) {
+                            params.data._date_error = result.message;
+
+                            showCellErrorPopup(params, result.message);
+
+                            params.api.refreshCells({
+                                rowNodes: [params.node],
+                                columns: [field.name],
+                                force: true
+                            });
+
+                            return false;
+                        }
+                    }
+
+                   
+                    params.data[field.name] = newDate;
+
+                    params.data._date_error = null;
+                    removeCellErrorPopup();
+                    trackChange(params.data);
+                    return true;
+                };
+
             } else if (field.type === 'DecimalField' || field.type === 'FloatField') {
                 colDef.valueFormatter = params => {
                     if (params.value == null) return '';
@@ -624,6 +1013,7 @@
                         maximumFractionDigits: 2
                     });
                 };
+            
                 colDef.cellStyle = { textAlign: 'right', fontWeight: 'bold', color: '#d9534f' };
             } else if (field.type === 'TextField') {
                 colDef.cellEditor = 'agLargeTextCellEditor';
@@ -641,6 +1031,39 @@
 
             
             {% endif %}
+
+            if(
+                ENABLE_GENERIC_FK_DROPDOWN &&
+                field.type === 'ForeignKey' &&
+                field.dropdown && 
+                !colDef.cellEditor
+            ) {
+                const data = window[field.dropdown] || [];
+                
+                colDef.cellEditor = 'agSelectCellEditor';
+                colDef.cellEditorParams = {
+                    values: data.map(item => item[field.valueField])
+                };
+
+                colDef.valueFormatter = params => {
+                    const found = data.find(
+                        x => String(x[field.valueField]) === String(params.value)
+                    );
+                    return found ? found[field.labelField] : params.value;
+                };
+
+                colDef.valuesetter = params => {
+                    const val = params.newValue;
+                    const found = data.find(x => String(x[field.valueField]) === string(val))
+                    if (!found) return false;
+
+                    params.data[field.name] =val;
+
+                    
+                    trackChange(params.data);
+                    return true;
+                }
+            }
             
             cols.push(colDef);
         });
@@ -651,7 +1074,7 @@
     
     function loadData() {
         showLoading(true);
-        fetch(API_URL)
+        fetch(API_URL, { credentials: "same-origin"})
             .then(response => response.json())
             .then(data => {
                 allData = data;
@@ -729,14 +1152,14 @@
     
     function addNewRow() {
         const newRow = {};
-        newRow[PRIMARY_KEY] = null;
-
+        
+        newRow._isNew = true;
         
         FIELDS_CONFIG.forEach(field => {
             if (field.name === PRIMARY_KEY) return;
 
             if (field.name === 'date') {
-                newRow[field.name] = new Date().toISOString().split('T')[0];
+                newRow[field.name] = null;
             } else if (field.type === 'DecimalField' || field.type === 'FloatField') {
                 newRow[field.name] = 0;
             } else {
@@ -764,7 +1187,7 @@
         const allRows = [];
         gridApi.forEachNode(node => allRows.push(node.data));
         
-        const newRows = allRows.filter(row => !row[PRIMARY_KEY]);
+        const newRows = allRows.filter(row => row._isNew === true);
         const updatedRows = Array.from(modifiedRows.values());
         
         if (newRows.length === 0 && updatedRows.length === 0) {
@@ -780,6 +1203,7 @@
                 
                 const createResponse = await fetch(API_URL, {
                     method: 'POST',
+                    credentials: "same-origin",
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': getCookie('csrftoken')
@@ -791,6 +1215,7 @@
                     const errorData = await createResponse.json();
                     throw new Error(`Create failed: ${JSON.stringify(errorData)}`);
                 }
+                row._isNew = false;
             }
             
             for (const row of updatedRows) {
@@ -798,6 +1223,7 @@
                 const pkValue = row[PRIMARY_KEY];
                 const updateResponse = await fetch(`${API_URL}${pkValue}/`, {
                     method: 'PUT',
+                    credentials:"same-origin",
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': getCookie('csrftoken')
@@ -857,6 +1283,8 @@
                 delete payload[key];
             }
         });
+
+        delete payload._isNew;
         
         return payload;
     }
@@ -879,6 +1307,7 @@
                 if (row.id) {
                     await fetch(`${API_URL}${pkValue}/`, {
                         method: 'DELETE',
+                        credentials: "same-origin",
                         headers: { 'X-CSRFToken': getCookie('csrftoken') }
                     });
                 }
@@ -1013,6 +1442,47 @@
             }
         }
         return cookieValue;
+    }
+
+    function uploadPdf(id) {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/pdf";
+
+        input.onchange = async () => {
+            const file = input.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            showLoading(true);
+
+            try{
+                const res =await fetch(`/api/billinward/${id}/upload_pdf/`, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "X-CSRFToken": getCookie("csrftoken")
+                    },
+                    body: formData
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    alert(data.error || "Upload failed");
+                } else {
+                    alert("Uploaded successfully");
+                    loadData();
+                }
+            } catch (e) {
+                alert("Upload failed")
+            }finally {
+                showLoading(false);
+            }
+        };
+        input.click();
     }
 </script>
 {% endblock %}

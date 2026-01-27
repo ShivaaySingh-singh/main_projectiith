@@ -47,7 +47,7 @@ class Project(models.Model):
     
     
     # Primary and Unique Fields
-    project_short_no = models.CharField(max_length=50, primary_key=True,)
+    project_short_no = models.CharField(max_length=50, unique=True,)
     project_no = models.CharField(max_length=100, unique = True)
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
     project_type = models.CharField(max_length=100,verbose_name="Project Type")
@@ -55,6 +55,10 @@ class Project(models.Model):
                                 null=True, blank=True, related_name="projects")
     pi_name = models.CharField(max_length=100)
     co_pi_name = models.CharField(max_length=200, blank=True, null=True)
+
+    dept = models.CharField(max_length=100, blank=True, null=True
+                            
+                            )
         
     # Project Details
     project_title = models.TextField(
@@ -94,7 +98,7 @@ class Project(models.Model):
     # Duration and Dates
     duration = models.CharField(
         max_length=100,
-        verbose_name="Duration"
+        verbose_name="Duration", blank = True, null=True
     )
     project_start_date = models.DateField(
         verbose_name="Project Start Date",
@@ -191,6 +195,15 @@ class Project(models.Model):
         null=True,
         verbose_name="Remarks"
     )
+
+    extension_reason = models.TextField(null=True, blank=True, verbose_name="Extension Reason")
+
+    extension_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_project_extension"
+    )
     
     class Meta:
         db_table = 'projects'
@@ -200,8 +213,9 @@ class Project(models.Model):
 
     @property
     def final_end_date(self):
-        return self.extended_end_date if (self.is_extended and self.extended_end_date) else self.project_end_date
-    
+        if self.is_extended and self.extended_end_date:
+            return self.extended_end_date
+        return self.project_end_date
     def clean(self):
         """Additional validation for amount fields"""
         super().clean()
@@ -226,9 +240,19 @@ class Project(models.Model):
             
             if self.extended_end_date < self.project_end_date:
                 raise ValidationError({"extended_end_date": "Extended end date can be cannot be earlier than project end date"})
-            
+        else:
+            if self.extended_end_date:
+                raise ValidationError({
+                    "extended_end_date": "Cannot set extended date if project is not marked as extended."
+                })   
     
     def save(self, *args, **kwargs):
+
+        if self.faculty:
+            if not self.pi_name:
+                self.pi_name = self.faculty.pi_name
+            if not self.dept:
+                self.dept = self.faculty.department
         # Run full validation before saving
         self.full_clean()
         
@@ -259,20 +283,25 @@ class ReceiptHead(models.Model):
 class Receipt(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="receipts")
     receipt_date = models.DateField(blank=True, null=True)                       
-    fy = models.CharField("Financial Year", max_length=20, blank=True, null=True)
+    
     category = models.CharField(max_length=100, blank=True, null=True)           
     reference_number = models.CharField(max_length=100, blank=True, null=True)   
-
+    
     # sanction heads (fixed)
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     head = models.ForeignKey(ReceiptHead,on_delete=models.PROTECT,null=True, blank=True, related_name="receipts")
 
     def clean(self):
-        if self.receipt.date and self.project.final_end_date:
+        if self.receipt_date and self.project.final_end_date:
             if self.receipt_date > self.project.final_end_date:
                 raise ValidationError({
                     'receipt_date': "Receipt date cannot exceed the projects final date"
                 })
+            
+            if self.project.project_status == "CLOSED":
+                raise ValidationError({
+                'project': "This project is closed. Please contact admin to extend."
+            })
     
     def __str__(self):
         return f"{self.project.project_no} - {self.reference_number}"
@@ -342,7 +371,7 @@ class CustomUser(AbstractUser):
 
 class SeedGrant(models.Model):
     grant_no = models.CharField(max_length=100, unique=True)
-    short_no = models.CharField(max_length=50, primary_key=True)
+    short_no = models.CharField(max_length=50, unique=True)
     faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
                                 null=True, blank=True, related_name="seed_grants")
     pi_name = models.CharField(max_length=255)
@@ -364,15 +393,64 @@ class SeedGrant(models.Model):
     furniture = models.DecimalField(max_digits=12, decimal_places=2, default=0, null=True, blank=True)
     visitor_expenses = models.DecimalField(max_digits=12, decimal_places=2, default=0, null=True, blank=True)
     lab_equipment = models.DecimalField(max_digits=12, decimal_places=2, default=0, null=True, blank=True)
+    is_extended = models.BooleanField(default=False)
+    extended_end_date = models.DateField(null=True, blank=True)
+    extension_reason = models.TextField(null=True, blank=True)
+    extension_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_seed_extensions"
+    )
+    project_status = models.CharField(
+        max_length=20,
+        choices=(
+            ("ONGOING", "Ongoing"),
+            ("EXPIRED", "Expired")
+        ),
+        default="ONGOING"
 
+    )
+
+    def get_effective_end_date(self):
+        if self.is_extended and self.extended_end_date:
+            return self.extended_end_date
+        return self.end_date
+    
+    @property
+    def final_end_date(self):
+        return self.get_effective_end_date()
+    
     def save(self, *args, **kwargs):
+        self.full_clean()
         if self.faculty:
             self.pi_name = self.faculty.pi_name
             self.dept = self.faculty.department
+
+        today = date.today()
+        effective_end = self.get_effective_end_date()
+
+        if today > effective_end:
+            self.project_status = "EXPIRED"
+        else:
+            self.project_status = "ONGOING"
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Seed {self.grant_no} - {self.pi_name}"
+    
+    def clean(self):
+        if self.is_extended:
+            if not self.extended_end_date:
+                raise ValidationError("Extended end date is required when project is extended.")
+            
+            if self.extended_end_date <= self.end_date:
+                raise ValidationError("Extended end date must be greater than original end date.")
+        else:
+            if self.extended_end_date:
+                raise ValidationError(
+                    "Extended end date must be empty if project is not marked as extended."
+                )
     
     class Meta:
         verbose_name = "Seed Grant"
@@ -380,7 +458,7 @@ class SeedGrant(models.Model):
 
 class TDGGrant(models.Model):
     grant_no = models.CharField(max_length=100, unique=True )
-    short_no = models.CharField(max_length=50, primary_key=True)
+    short_no = models.CharField(max_length=50, unique=True)
     faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
                                 null=True, blank=True, related_name="tdg_grants")
     pi_name = models.CharField(max_length=255)
@@ -403,13 +481,61 @@ class TDGGrant(models.Model):
     manpower = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     others = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     furniture = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    is_extended = models.BooleanField(default=False)
+    extended_end_date = models.DateField(null=True, blank=True)
+    extension_reason = models.TextField(null=True, blank=True)
+    extension_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_tdg_extensions"
+    )
+    project_status = models.CharField(
+        max_length=20,
+        choices=(
+            ("ONGOING", "Ongoing"),
+            ("EXPIRED", "Expired")
+        ),
+        default="ONGOING"
+
+    )
+
+    def get_effective_end_date(self):
+        if self.is_extended and self.extended_end_date:
+            return self.extended_end_date
+        return self.end_date
+    
+    @property
+    def final_end_date(self):
+        return self.get_effective_end_date()
 
     def save(self, *args, **kwargs):
+        self.full_clean()
         if self.faculty:
             self.pi_name = self.faculty.pi_name
             self.dept = self.faculty.department
+        
+        today = date.today()
+        effective_end = self.get_effective_end_date()
+
+        if today > effective_end:
+            self.status = "EXPIRED"
+        else:
+            self.status = "ONGOING"
         super().save(*args, **kwargs)
-    
+
+    def clean(self):
+        if self.is_extended:
+            if not self.extended_end_date:
+                raise ValidationError("Extended end date is required when project is extended.")
+
+            if self.extended_end_date <= self.end_date:
+                raise ValidationError("Extended end date must be greater than original end date.")
+        else:
+            if self.extended_end_date:
+                raise ValidationError(
+                    "Error end date must be empty if project is not marked as extended."
+                )
     def __str__(self):
         return f"TDG {self.grant_no} - {self.pi_name}"
     
@@ -477,6 +603,8 @@ class BillInward(models.Model):
     
     bill_status = models.CharField(max_length=20,choices=BILL_STATUS_CHOICES,default='pending',verbose_name="Bill Status")
 
+    bill_pdf = models.FileField(upload_to="bill_pdfs/", null=True, blank=True, verbose_name="Bill PDF")
+
     remarks = models.TextField(
         blank=True,
         null=True,
@@ -533,8 +661,25 @@ class Expenditure(models.Model):
     remarks = models.TextField(blank=True, null=True)
     
     def clean(self):
+        project = self.seed_grant or self.tdg_grant
+
+        if project:
+            effective_end = project.get_effective_end_date()
+
+            if self.date > effective_end:
+                raise ValidationError(
+                    f"This project is expired. Entry date cannot be grater than {effective_end}. "
+                )
+            
+            if project.project_status != "ONGOING":
+                raise ValidationError("This project is not active")
+
         if self.seed_grant and self.tdg_grant:
             raise ValidationError("Select only one grant type (Seed or TDG).")
+        
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
     
 
     @property
@@ -595,6 +740,27 @@ class Commitment(models.Model):
     particulars = models.TextField()
     gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remarks = models.TextField(blank=True, null=True)
+
+    def clean(self):
+        project = self.seed_grant or self.tdg_grant
+
+        if project:
+            effective_end = project.get_effecive_end_date()
+
+            if self.date > effective_end:
+                raise ValidationError(
+                    f"This project is expired. Entry date cannot be greater than {effective_end}. "
+                )
+            
+            if project.project_status != "ONGOING":
+                raise ValidationError("This project is not active")
+            
+        if self.seed_grant and self.tdg_grant:
+            raise ValidationError("Select only one grant type (Seed or TDG).")
+        
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     
 
@@ -688,11 +854,147 @@ class FundRequest(models.Model):
             raise ValidationError("please select exactly one project/grant type.")
         
 
+
+    
+class ProjectSanctionDistribution(models.Model):
+    """
+    Head-wise and Year-wise distribution of sanctioned amount for a project.
+    actins as budget distribution
+    """
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="sanction_distributions", verbose_name="Project (Short No.)")
+
+    faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL, null=True,
+        blank=True, to_field="faculty_id", related_name="sanction_distributions", verbose_name="Faculty")
+    
+    financial_year = models.CharField(max_length=9, help_text="e.g. 2024-25")
+
+    head = models.ForeignKey(
+        ReceiptHead, on_delete=models.PROTECT, related_name="sanction_distributions",
+        verbose_name="Sanction Head"
+    )
+
+    sanctioned_amount = models.DecimalField(max_digits=15, decimal_places=2, 
+        validators=[MinValueValidator(0)],
+        verbose_name="Sanctioned Amount"
+    )
+
+    project_no = models.CharField(max_length=100)
+    project_title = models.CharField(max_length=500)
+    pi_name = models.CharField(max_length=200)
+    department = models.CharField(max_length=100)
+
+    remarks = models.TextField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Project Sanction Distribution"
+        verbose_name_plural = "Project Sanction Distributions"
+        ordering = ["project", "financial_year", "head"]
+        unique_together = (
+            "project",
+            "financial_year",
+            "head",
+        )
+        indexes = [
+            models.Index(fields=["project"]),
+            models.Index(fields=["financial_year"]),
+            models.Index(fields=["head"]),
+        ]
+    def clean(self):
+        if self.sanctioned_amount < 0:
+            raise ValidationError("Sanctioned amount cannot be negative.")
+    
+    def save(self, *args, **kwargs):
+        """
+        Autofill snapshot data from Project & Faculty
+        """
+        if self.project:
+            self.project_no = self.project.project_no
+            self.project_title = self.project.project_title
+            self.pi_name = self.project.pi_name
+            self.department = self.project.dept
+
+            if not self.faculty:
+                self.faculty = self.project.faculty
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return(
+            f"{self.project.project_short_no} | "
+            f"{self.financial_year} | "
+            f"{self.head.name} | {self.sanctioned_amount}"
+        )
+# Payee an independent able keeping the records of employee
+
+class Payee(models.Model):
+    payee_type = models.CharField(max_length=20)
+    name_of_payee = models.CharField(max_length=200)
+    emp_code = models.CharField(max_length=50, blank=True, null=True)
+    designation = models.CharField(max_length=100,blank=True,null=True)
+    department = models.CharField(max_length=100, blank=True, null=True)
+    pan = models.CharField(max_length=20, blank=True,null=True)
+    gst = models.CharField(max_length=20,blank=True, null=True)
+
+    account_number = models.CharField(max_length=50)
+    bank_name = models.CharField(max_length=200)
+    branch = models.CharField(max_length=200)
+    ifsc = models.CharField(max_length=20)
+
+    email = models.EmailField()
+    contact_no = models.CharField(max_length=20,blank=True, null=True)
+    pfms_code = models.CharField(max_length=50, blank=True, null=True)
+    pfms_name = models.CharField(max_length=200,blank=True, null=True)
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Payee"
+        verbose_name_plural = "Payees"
+        ordering = ["name_of_payee"]
+
+    def __str__(self):
+        return f"{self.name_of_payee} ({self.payee_type })"
+    
+class PaymentType(models.Model):
+    name = models.CharField(
+        max_length=100,
+        unique=True
+
+    )
+
+    class Meta:
+        verbose_name = "Payment Type"
+        verbose_name_plural = "Payment Types"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+    
+class Bank(models.Model):
+    bank_name = models.CharField(max_length=200, help_text="Full bank name")
+    short_no = models.CharField(max_length=50, help_text="Short name / code used internally")
+    account_no = models.CharField(max_length=50, help_text="Default / reference account number", blank=True, null=True)
+    scheme_code = models.CharField(max_length=50, blank=True, null=True, help_text="Scheme code (if applicable)")
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Bank"
+        verbose_name_plural = "banks"
+        ordering = ["bank_name"]
+        unique_together = ("bank_name","short_no")
+
+    def __str__(self):
+        return f"{self.bank_name} ({self.short_no})"
+    
 GST_TDS_CHOICES = [
     ("CGST", "CGST @ 2%"),
     ("SGST", "SGST @ 2%"),
     ("IGST", "IGST @ 2%"),
 
+]
+PAYMENT_STATUS_CHOICES = [
+    ("PROCESSED", "Processed"),
+    ("PAID", "Paid"),
 ]
 
 class Payment(models.Model):
@@ -701,21 +1003,27 @@ class Payment(models.Model):
     head = models.ForeignKey(ReceiptHead, on_delete=models.PROTECT, related_name="payments")
 
     # Payee Info
-    payment_type = models.CharField(max_length=100)
-    name_of_payee = models.CharField(max_length=200)
+    payment_type = models.ForeignKey(PaymentType, on_delete=models.PROTECT,related_name="payments")
+    payee = models.ForeignKey(Payee, on_delete=models.PROTECT,null =True, blank =True ,related_name="payments")
+
+    bank = models.ForeignKey(Bank, on_delete=models.PROTECT,null=True,blank=True, related_name="payments")
 
     # Bank Info
-    bank_name = models.CharField(max_length=200, blank=True, null=True)
-    branch = models.CharField(max_length=200, blank=True, null=True)
-    account_no = models.CharField(max_length=50, blank=True, null=True)
-    ifsc = models.CharField(max_length=20, blank=True, null=True)
+    cheque_no = models.CharField(max_length=100, blank=True, null=True)
+    utr_no = models.CharField(max_length=100, blank=True, null=True)
+
+    payee_bank_name = models.CharField(max_length=50, blank=True, null=True)
+    
+    payee_branch_name = models.CharField(max_length=200, blank=True, null=True)
+    payee_account_no = models.CharField(max_length=50, blank=True, null=True)
+    payee_ifsc = models.CharField(max_length=20, blank=True, null=True)
+    payee_pan = models.CharField(max_length=20, blank=True, null=True)
 
     # Transaction Info
-    utr_no = models.CharField(max_length=100, blank=True, null=True)
-    faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
-                                null=True, blank=True,verbose_name="Faculty",to_field='faculty_id', related_name="payments")
-
+    
+    
     pi_name = models.CharField(max_length=200, blank=True, null=True)
+    pi_email = models.EmailField(blank=True, null=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     # TDS Handling (Cascading Dropdowns in AG Grid)
     tds_section = models.ForeignKey(
@@ -749,17 +1057,91 @@ class Payment(models.Model):
 
     purpose = models.TextField(blank=True, null=True)
 
+    payee_email = models.EmailField(blank=True, null=True)
+    other_email = models.EmailField(blank=True, null=True)
+    cc_email_default = models.EmailField(blank=True, null=True)
+    cc_email_po_store = models.EmailField(blank=True, null=True)
+
+    payment_status = models.CharField(
+        max_length=15,
+        choices=PAYMENT_STATUS_CHOICES,
+        default="PROCESSED"
+    )
+
+    email_sent_log = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Auto-filled when paymentemail is sent"
+    )
+
     
+
+    
+
+    def clean(self):
+        errors = {}
+
+        if self.project:
+            final_end = self.project.final_end_date
+
+            if self.date and final_end and self.date > final_end:
+                errors["date"] = f"PRoject is expired. payment date cannot be grater than {final_end}. "
+
+            if self.project.project_status == "CLOSED":
+                errors["project"] = "This project is closed. Please contact admin to extend the project. "
+
+        # Payee & Bank must exist
+        if not self.payee:
+            errors["payee"] = "Payee is mandatory to save a payment."
+
+        if not self.bank:
+            errors["bank"] = "Bank is mandatory to save a payment."
+
+        # Snapshot fields must be present
+        snapshot_fields = {
+            "payee_bank_name": self.payee_bank_name,
+            "payee_branch_name": self.payee_branch_name,
+            "payee_account_no": self.payee_account_no,
+            "payee_ifsc": self.payee_ifsc,
+        }
+
+        for field, value in snapshot_fields.items():
+            if not value:
+                errors[field] = "This field is mandatory and auto-filled from Payee."
+
+        if errors:
+            raise ValidationError(errors)
+
+
+    def save(self, *args, **kwargs):
+        if self.project:
+            self.pi_name = self.project.pi_name
+            if self.project.faculty and self.project.faculty.email:
+                self.pi_email = self.project.faculty.email
+            else:
+                self.pi_email = None
+
+        if self.payee:
+            self.payee_account_no = self.payee.account_number
+            self.payee_bank_name = self.payee.bank_name
+            self.payee_branch_name = self.payee.branch
+            self.payee_ifsc = self.payee.ifsc
+            self.payee_email = self.payee.email
+            self.payee_pan = self.payee.pan
+
+
+        self.full_clean()    
+        super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = "Payment"
         verbose_name_plural = "Payments"
         ordering = ["-date"]
-
-    def save(self, *args, **kwargs):
-        if self.faculty:
-            self.pi_name = self.faculty.pi_name
-        super().save(*args, **kwargs)
+        indexes = [
+            models.Index(fields=["project"]),
+            models.Index(fields=["payee"]),
+            models.Index(fields=["payment_status"]),
+        ]
 
     def __str__(self):
         return f"Payment for {self.project.project_no} on {self.date}"

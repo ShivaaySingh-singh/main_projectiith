@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponseRedirect, JsonResponse
 from django.core.serializers.json import DjangoJSONEncoder
-from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment
+from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment, ProjectSanctionDistribution,Payee
 from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
 import re
@@ -13,10 +13,15 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser
 from django.db.models import Q
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
 from .forms import FundRequestForm, AdminRemarkForm
 
 from .serializers import (
-    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer,ProjectSerializer,BillInwardSerializer,PaymentSerializer,ReceiptSerializer
+    ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer,ProjectSerializer,BillInwardSerializer,PaymentSerializer,ReceiptSerializer,
+    ProjectSanctionDistributionSerializer, PayeeSerializer
+
+
 )
 
 
@@ -406,7 +411,9 @@ class GenericModelAPIView(APIView):
         'project': (Project, ProjectSerializer),
         'billinward': (BillInward, BillInwardSerializer),
         'payment': (Payment, PaymentSerializer),
-        'receipt': (Receipt, ReceiptSerializer)
+        'receipt': (Receipt, ReceiptSerializer),
+        'projectsanctiondistribution': (ProjectSanctionDistribution, ProjectSanctionDistributionSerializer),
+        'payee': (Payee, PayeeSerializer)
     }
 
     def get_model_and_serializer(self, model_name):
@@ -468,7 +475,7 @@ class GenericModelDetailAPIView(APIView):
         try:
             # SeedGrant & TDG Grant short_no se lookup 
             if model_name.lower() in ['seedgrant', 'tdggrant']:
-                return Model.objects.get(short_no=pk)
+                return Model.objects.get(pk=pk)
             if model_name.lower() in ['expenditure', 'commitment']:
                 return Model.objects.select_related('seed_grant', 'tdg_grant').get(pk=pk)
 
@@ -536,6 +543,33 @@ class GenericModelDetailAPIView(APIView):
         obj.delete()
         return Response({"message": "Deleted successfully"}, status=204)
 
+@api_view(["POST"])
+@permission_classes([IsAdminUser])
+@parser_classes([MultiPartParser, FormParser])
+def upload_bill_pdf(request, pk):
+    try:
+        bill = BillInward.objects.get(pk=pk)
+    except BillInward.DoesNotExist:
+        return Response({"error": "Bill not found"}, status=404)
+    
+    user = request.user
+
+    if not (user.is_superuser or user.groups.filter(name="billinward").exists()):
+        return Response({"error": "Not allowed"}, status=403)
+    
+    if "file" not in request.FILES:
+        return Response({"error": "No file uploaded"}, status=400)
+    
+    file = request.FILES["file"]
+
+    bill.bill_pdf = file
+    bill.save()
+
+    return Response({
+        "message": "PDF uploaded successfully",
+        "bill_pdf_url": request.build_absolute_uri(bill.bill_pdf.url)
+    })
+        
 
 
 #Form view for requsting fund

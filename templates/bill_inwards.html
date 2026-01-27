@@ -332,6 +332,7 @@ inward-header {
                         <th>Assigned To</th>
                         <th>Outward Date</th>
                         <th>Remarks</th>
+                        <th> Bill_PDF </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -360,6 +361,15 @@ inward-header {
                         <td style="font-weight: 600;">{{ bill.whom_to.get_full_name|default:"-" }}</td>
                         <td style="font-weight: 600;">{{ bill.outward_date|date:"d-M-Y"|default:"-" }}</td>
                         <td style="font-weight: 600;">{{ bill.remarks|truncatewords:5|default:"-" }}</td>
+                        <td style="font-weight: 600;">
+    {% if bill.bill_pdf %}
+        <a href="{{ bill.bill_pdf.url }}" target="_blank" class="back-btn" style="padding:4px 10px; font-size:12px;">
+            View PDF
+        </a>
+    {% else %}
+        <span style="color:#999;">—</span>
+    {% endif %}
+</td>
                         
                     </tr>
                     {% endfor %}

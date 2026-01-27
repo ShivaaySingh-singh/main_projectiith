@@ -126,15 +126,14 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
-import os
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, "static")
+    BASE_DIR / "static"
 ]
 
-#MEDIA_URL = '/MEDIA/'
-
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / "media"
 #BASE_DIR = os.path.join(BASE_DIR, "media")
 
 # Default primary key field type

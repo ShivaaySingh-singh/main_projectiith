@@ -317,13 +317,13 @@ body {
                     {% for project in projects %}
                     <div class="project-row">
                         <div class="project-title">
-                            <h6>{{ project.title }}</h6>
+                            <h6>{{ project.project_title }}</h6>
                         </div>
                         <div class="project-number">
                             <span class="project-badge">{{ project.project_no }}</span>
                         </div>
                         <div class="project-action">
-                            <a href="{% url 'project_detail' project.id %}" class="btn-view">
+                            <a href="{% url 'project_detail' project.project_short_no %}" class="btn-view">
                                 View Details
                             </a>
                         </div>
