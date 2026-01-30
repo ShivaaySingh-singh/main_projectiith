@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project,BillInward,Faculty, Payment, Receipt, TDSSection,TDSRate, ProjectSanctionDistribution, ReceiptHead, Payee
+import re
 
 # ✅ Base Serializer with Grant Support
 class GrantRelatedSerializer(serializers.ModelSerializer):
@@ -58,10 +59,10 @@ class GrantRelatedSerializer(serializers.ModelSerializer):
 
 
 # ✅ Expenditure Serializer
-class ExpenditureSerializer(GrantRelatedSerializer):
-    seed_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False)
+class    ExpenditureSerializer(GrantRelatedSerializer):
+    seed_grant = serializers.PrimaryKeyRelatedField(queryset=SeedGrant.objects.all(), allow_null=True, required=False)
 
-    tdg_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=TDGGrant.objects.all(), allow_null=True, required=False)
+    tdg_grant = serializers.PrimaryKeyRelatedField(queryset=TDGGrant.objects.all(), allow_null=True, required=False)
 
      
     class Meta:
@@ -69,7 +70,7 @@ class ExpenditureSerializer(GrantRelatedSerializer):
         fields = [
             'id', 'date', 'head', 'particulars', 'amount', 'remarks',
             'seed_grant', 'tdg_grant',
-            'grant_no_display', 'seed_grant_short', 'tdg_grant_short'        ]
+            'grant_no_display', 'seed_grant_short', 'tdg_grant_short'  ]
 
    
 
@@ -100,8 +101,8 @@ class ExpenditureSerializer(GrantRelatedSerializer):
 
 # ✅ Commitment Serializer
 class CommitmentSerializer(GrantRelatedSerializer):
-    seed_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=SeedGrant.objects.all(), allow_null=True, required=False)
-    tdg_grant = serializers.SlugRelatedField(slug_field='short_no', queryset=TDGGrant.objects.all(), allow_null=True, required=False )
+    seed_grant = serializers.PrimaryKeyRelatedField(queryset=SeedGrant.objects.all(), allow_null=True, required=False)
+    tdg_grant = serializers.PrimaryKeyRelatedField(queryset=TDGGrant.objects.all(), allow_null=True, required=False )
     class Meta:
         model = Commitment
         fields = [
@@ -139,18 +140,22 @@ class SeedGrantSerializer(serializers.ModelSerializer):
     pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     faculty_department = serializers.CharField(source="faculty.department", read_only=True)
     final_end_date = serializers.SerializerMethodField()
+    extension_approved_by_name = serializers.SerializerMethodField()
 
     
     class Meta:
         model = SeedGrant
-        fields = '__all__'
-        read_only_fields = ["project_status", "extension_approved_by", "extension_reason"]
+        fields = "__all__"
+        read_only_fields = ["project_status"]
     def validate(self, attrs):
         is_extended = attrs.get(
             "is_extended",
             getattr(self.instance, "is_extended", False)
 
         )
+
+        if self.instance and is_extended is False:
+            return attrs
 
         extended_end_date = attrs.get(
             "extended_end_date",
@@ -183,6 +188,15 @@ class SeedGrantSerializer(serializers.ModelSerializer):
                 "extended_end_date": "Extended end date cannot be earlier than project end date. "
             })
         return attrs
+    
+    def get_extension_approved_by_name(self, obj):
+        if obj.extension_approved_by:
+            return (
+                obj.extension_approved_by.get_full_name()
+                or obj.extension_approved_by.username
+            )
+        return None
+
     def _protect_system_fields(self, validated_data):
         validated_data.pop("project_status", None)
         validated_data.pop("extension_approved_by", None)
@@ -209,15 +223,33 @@ class SeedGrantSerializer(serializers.ModelSerializer):
 
         validated_data = self._protect_system_fields(validated_data)
 
-        if not user.is_superuser:
+        is_extended = validated_data.get(
+            "is_extended",
+            instance.is_extended
+        )
+
+        if user.is_superuser:
+            if is_extended:
+                validated_data["extension_approved_by"] = user
+                     
+                
+            
+            else:
+                validated_data["extended_end_date"] = None
+                validated_data["extension_reason"] = None
+                validated_data["extension_approved_by"] = None
+
+        else:
             validated_data.pop("is_extended", None)
             validated_data.pop("extended_end_date", None)
             validated_data.pop("extension_reason", None)
             validated_data.pop("extension_approved_by", None)
-        else:
-            if validated_data.get("is_extended") is True:
-                validated_data["extension_approved_by"] = user
+
         return super().update(instance, validated_data)
+
+           
+
+        
     def get_final_end_date(self, obj):
         return obj.get_effective_end_date()
 
@@ -228,6 +260,8 @@ class TDGGrantSerializer(serializers.ModelSerializer):
     
     pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     faculty_department = serializers.CharField(source="faculty.department", read_only=True)
+    final_end_date = serializers.SerializerMethodField()
+    extension_approved_by_name = serializers.SerializerMethodField()
     
     
     class Meta:
@@ -237,8 +271,11 @@ class TDGGrantSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         is_extended = attrs.get("is_extended",
-                                getattr(self.instance, "is_extended, False")
+                                getattr(self.instance, "is_extended", False)
         )
+
+        if self.instance and is_extended is False:
+            return attrs
 
         extended_end_date = attrs.get(
             "extended_end_date",
@@ -270,6 +307,16 @@ class TDGGrantSerializer(serializers.ModelSerializer):
                 "extended_end_date": "Extended end date cannot be earlier than project end date."
             })
         return attrs
+    
+    def get_extension_approved_by_name(self, obj):
+        if obj.extension_approved_by:
+            return (
+                obj.extension_approved_by.get_full_name()
+                or obj.extension_approved_by.username
+
+            )
+        return None
+
     def _protect_system_fields(self, validated_data):
         validated_data.pop("project_status", None)
         validated_data.pop("extension_approved_by", None)
@@ -291,17 +338,29 @@ class TDGGrantSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         user = self.context["request"].user
 
-        if not user.is_superuser:
+        validated_data = self._protect_system_fields(validated_data)
+        is_extended = validated_data.get(
+            "is_extended",
+            instance.is_extended
+        )
+
+        if user.is_superuser:
+            if is_extended:
+                validated_data["extension_approved_by"] = user
+
+            else:
+                validated_data["extended_end_date"] = None
+                validated_data["extension_reason"] = None
+                validated_data["extension_approved_by"] = None
+        else:
             validated_data.pop("is_extended", None)
             validated_data.pop("extended_end_date", None)
             validated_data.pop("extension_reason", None)
             validated_data.pop("extension_approved_by", None)
-        else:
-            if validated_data.get("is_extended") is True:
-                validated_data["extension_approved_by"] = user
         return super().update(instance, validated_data)
 
-
+    def get_final_end_date(self,obj):
+        return obj.get_effective_end_date()
 
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
@@ -534,9 +593,9 @@ class ReceiptSerializer(serializers.ModelSerializer):
         date_val = data.get("receipt_date")
 
         if project and date_val:
-            final_end = project.final_end_date
+            effective_end = project.get_effective_end_date()
 
-            if date_val > final_end:
+            if date_val > effective_end:
                 raise serializers.ValidationError(
                     "This project is expired. Please contact admin to extend."
             )
@@ -549,6 +608,8 @@ class ReceiptSerializer(serializers.ModelSerializer):
     class Meta:
         model = Receipt
         fields = '__all__'
+
+        
 
 
 class ProjectSanctionDistributionSerializer(serializers.ModelSerializer):
@@ -594,6 +655,15 @@ class ProjectSanctionDistributionSerializer(serializers.ModelSerializer):
             "pi_name",
             "department",
         ]
+
+    def validate_financial_year(self, value):
+        if not re.match(r'^\d{4}-\d{2}$', value):
+            raise serializers.ValidationError(
+                "Financial year must be in format YYYY-YY (e.g. 2024-25)"
+            )
+        
+        
+        return value
 
     def validate_sanctioned_amount(self, value):
         if value < 0:

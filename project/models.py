@@ -7,8 +7,13 @@ from django.core.exceptions import ValidationError
 from datetime import date 
 from django.core.validators import MinValueValidator
 import re
+from django.core.validators import RegexValidator
 
 
+fy_validator = RegexValidator(
+    regex=r'^\d{4}-\d{2}$',
+    message = "Financial year must be in format YYYY-YY, e.g. 2024-25"
+)
 def validate_positive_amount(value):
         """Ensure amount is positive and numeric only"""
         if value < 0:
@@ -34,9 +39,9 @@ class Faculty(models.Model):
     
 class Project(models.Model):
     GENDER_CHOICES = [
-        ('M', 'Male'),
-        ('F', 'Female'),
-        ('O', 'Other'),
+        ('Male', 'Male'),
+        ('Female', 'Female'),
+        ('Other', 'Other'),
     ]
     
     STATUS_CHOICES = [
@@ -49,7 +54,7 @@ class Project(models.Model):
     # Primary and Unique Fields
     project_short_no = models.CharField(max_length=50, unique=True,)
     project_no = models.CharField(max_length=100, unique = True)
-    gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
+    gender = models.CharField(max_length=7, choices=GENDER_CHOICES)
     project_type = models.CharField(max_length=100,verbose_name="Project Type")
     faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
                                 null=True, blank=True, related_name="projects")
@@ -211,11 +216,15 @@ class Project(models.Model):
         verbose_name_plural = 'Projects'
         ordering = ['-project_start_date']
 
-    @property
-    def final_end_date(self):
+    def get_effective_end_date(self):
         if self.is_extended and self.extended_end_date:
             return self.extended_end_date
         return self.project_end_date
+
+
+    @property
+    def final_end_date(self):
+        return self.get_effective_end_date()
     def clean(self):
         """Additional validation for amount fields"""
         super().clean()
@@ -238,8 +247,8 @@ class Project(models.Model):
             if not self.extended_end_date:
                 raise ValidationError({"extended_end_date": "Extended end date is required if project is extended"})
             
-            if self.extended_end_date < self.project_end_date:
-                raise ValidationError({"extended_end_date": "Extended end date can be cannot be earlier than project end date"})
+            if self.extended_end_date <= self.project_end_date:
+                raise ValidationError({"extended_end_date": "Extended end date must be greater than the original end date"})
         else:
             if self.extended_end_date:
                 raise ValidationError({
@@ -259,7 +268,9 @@ class Project(models.Model):
         # Auto-update project status based on end date
         
         today = date.today()
-        if self.final_end_date < today:
+        effective_end = self.get_effective_end_date()
+
+        if effective_end < today:
             self.project_status = 'CLOSED'
         else:
             self.project_status = 'ONGOING'
@@ -292,8 +303,9 @@ class Receipt(models.Model):
     head = models.ForeignKey(ReceiptHead,on_delete=models.PROTECT,null=True, blank=True, related_name="receipts")
 
     def clean(self):
-        if self.receipt_date and self.project.final_end_date:
-            if self.receipt_date > self.project.final_end_date:
+        if self.project and self.receipt_date:
+            effective_end = self.project.get_effective_end_date()
+            if self.receipt_date > effective_end:
                 raise ValidationError({
                     'receipt_date': "Receipt date cannot exceed the projects final date"
                 })
@@ -302,6 +314,10 @@ class Receipt(models.Model):
                 raise ValidationError({
                 'project': "This project is closed. Please contact admin to extend."
             })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
     
     def __str__(self):
         return f"{self.project.project_no} - {self.reference_number}"
@@ -446,11 +462,7 @@ class SeedGrant(models.Model):
             
             if self.extended_end_date <= self.end_date:
                 raise ValidationError("Extended end date must be greater than original end date.")
-        else:
-            if self.extended_end_date:
-                raise ValidationError(
-                    "Extended end date must be empty if project is not marked as extended."
-                )
+        
     
     class Meta:
         verbose_name = "Seed Grant"
@@ -531,11 +543,7 @@ class TDGGrant(models.Model):
 
             if self.extended_end_date <= self.end_date:
                 raise ValidationError("Extended end date must be greater than original end date.")
-        else:
-            if self.extended_end_date:
-                raise ValidationError(
-                    "Error end date must be empty if project is not marked as extended."
-                )
+        
     def __str__(self):
         return f"TDG {self.grant_no} - {self.pi_name}"
     
@@ -639,7 +647,6 @@ class Expenditure(models.Model):
 
     seed_grant = models.ForeignKey(
         SeedGrant,
-        to_field='short_no',
         on_delete=models.CASCADE,
         null=True, blank=True,
         related_name='expenditures'
@@ -647,7 +654,6 @@ class Expenditure(models.Model):
 
     tdg_grant = models.ForeignKey(
         TDGGrant,
-        to_field='short_no',
         on_delete=models.CASCADE,
         null=True, blank=True,
         related_name='expenditures_tdg'
@@ -719,7 +725,6 @@ class Commitment(models.Model):
     
     seed_grant = models.ForeignKey(
         SeedGrant,
-        to_field='short_no',
         on_delete=models.CASCADE,
         null=True, blank=True,
         related_name='commitments'
@@ -727,7 +732,6 @@ class Commitment(models.Model):
 
     tdg_grant = models.ForeignKey(
         TDGGrant,
-        to_field='short_no',
         on_delete=models.CASCADE,
         null=True, blank=True,
         related_name='commitments_tdg'
@@ -745,7 +749,7 @@ class Commitment(models.Model):
         project = self.seed_grant or self.tdg_grant
 
         if project:
-            effective_end = project.get_effecive_end_date()
+            effective_end = project.get_effective_end_date()
 
             if self.date > effective_end:
                 raise ValidationError(
@@ -866,7 +870,7 @@ class ProjectSanctionDistribution(models.Model):
     faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL, null=True,
         blank=True, to_field="faculty_id", related_name="sanction_distributions", verbose_name="Faculty")
     
-    financial_year = models.CharField(max_length=9, help_text="e.g. 2024-25")
+    financial_year = models.CharField(max_length=7,validators=[fy_validator], help_text="e.g. 2024-25")
 
     head = models.ForeignKey(
         ReceiptHead, on_delete=models.PROTECT, related_name="sanction_distributions",
@@ -918,7 +922,7 @@ class ProjectSanctionDistribution(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return(
+        return(  
             f"{self.project.project_short_no} | "
             f"{self.financial_year} | "
             f"{self.head.name} | {self.sanctioned_amount}"
@@ -944,7 +948,7 @@ class Payee(models.Model):
     pfms_code = models.CharField(max_length=50, blank=True, null=True)
     pfms_name = models.CharField(max_length=200,blank=True, null=True)
 
-    is_active = models.BooleanField(default=True)
+    
 
     class Meta:
         verbose_name = "Payee"

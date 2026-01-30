@@ -147,9 +147,6 @@ class ExcelViewMixin:
         return fields
     
     def get_primary_key_field(self):
-        model_name = self.model._meta.model_name
-        if model_name in ['seedgrant', 'tdggrant']:
-            return 'short_no'
         return 'id'
     
     def get_field_width(self, field):
@@ -555,6 +552,7 @@ class ReceiptAdmin(ExcelViewMixin, ImportExportModelAdmin):
                     "type": "ForeignKey",
                     "editable": True,
                     "width": 220,
+                    "label": "Project",
 
                     "dropdown": "projects",
                     "valueField": "id",
@@ -575,17 +573,17 @@ class ReceiptAdmin(ExcelViewMixin, ImportExportModelAdmin):
     def get_excel_context_data(self):
         projects = list(
             Project.objects.values(
-                "project_short_no",
-                "project_no", 'end_date', 'extended_end_date', 'project_status'
+                "id","project_short_no",
+                "project_no", 'project_end_date', 'extended_end_date', 'project_status'
                
             ).order_by("project_no")
             .annotate(
-                end_date_str = models.functions.Cast('end_date', models.CharField()),
+                end_date_str = models.functions.Cast('project_end_date', models.CharField()),
                 extended_end_date_str= models.functions.Cast('extended_end_date', models.CharField())
         
             )
             .values(
-                'project_short_no', 'project_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'project_status'
+                'id','project_short_no', 'project_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'project_status'
             )
             
         )
@@ -606,7 +604,9 @@ class SeedGrantAdmin(ExcelViewMixin, ImportExportModelAdmin):
 
     readonly_fields = ("pi_name", "dept")
 
-    list_display = ("grant_no", "short_no", "faculty_pi", "faculty_dept", "total_budget")
+    
+
+    list_display = ("grant_no", "short_no", "faculty_pi", "faculty_dept", "total_budget", "extension_approved_by_name",)
     search_fields = ("grant_no", "short_no", "faculty__pi_name", "faculty__department")
     excel_exclude_fields = []
     def get_excel_context_data(self):
@@ -621,6 +621,15 @@ class SeedGrantAdmin(ExcelViewMixin, ImportExportModelAdmin):
     
     def faculty_dept(self,obj):
         return obj.faculty.department if obj.faculty else "-"
+    
+    def extension_approved_by_name(self, obj):
+        return(
+            obj.extension_approved_by.get_full_name()
+            or obj.extension_approved_by.username
+            if obj.extension_approved_by else "_"
+        )
+    extension_approved_by_name.short_description = "Approved By"
+    
 
 class TDGGrantAdmin(ExcelViewMixin, ImportExportModelAdmin):
     resource_class = TDGGrantResource
@@ -674,24 +683,24 @@ class ExpenditureAdmin(ExcelViewMixin, ImportExportModelAdmin):
         JavaScript template will use this data
         """
         return {
-            'seed_grants': list(SeedGrant.objects.values('short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date','project_status')
+            'seed_grants': list(SeedGrant.objects.values('id','short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date','project_status')
                                 .annotate(
                                     end_date_str = models.functions.Cast('end_date', models.CharField()),
                                     extended_end_date_str= models.functions.Cast('extended_end_date', models.CharField())
                                 )
                                 .values(
-                                    'short_no', 'grant_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'is_extended', 'project_status'
+                                    'id','short_no', 'grant_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'is_extended', 'project_status'
                                 )
                             ),
                             
-            'tdg_grants': list(TDGGrant.objects.values('short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date', 'is_extended', 'project_status')
+            'tdg_grants': list(TDGGrant.objects.values('id','short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date', 'is_extended', 'project_status')
                                
                                .annotate(
                                    end_date_str = models.functions.Cast('end_date', models.CharField()),
                                    extended_end_date_str = models.functions.Cast('extended_end_date',models.CharField())
                                )
                                .values(
-                                   'short_no', 'grant_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'is_extended', 'project_status'
+                                   'id','short_no', 'grant_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'is_extended', 'project_status'
                                )
                             ),
                             
@@ -719,22 +728,22 @@ class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
     
     def get_excel_context_data(self):
         return {
-            'seed_grants': list(SeedGrant.objects.values('short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date', 'project_status')
+            'seed_grants': list(SeedGrant.objects.values('id','short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date', 'project_status')
                                 .annotate(
                                     end_date_str = models.functions.Cast('end_date', models.CharField()),
                                     extended_end_date_str = models.functions.Cast('extended_end_date', models.CharField())
                                 )
                                 .values(
-                                    'short_no', 'grant_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'is_extended', 'project_status'
+                                    'id','short_no', 'grant_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'is_extended', 'project_status'
                                 )
                             ),
-            'tdg_grants': list(TDGGrant.objects.values('short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date', 'is_extended', 'project_status')
+            'tdg_grants': list(TDGGrant.objects.values('id','short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date', 'is_extended', 'project_status')
                                .annotate(
                                    end_date_str = models.functions.Cast('end_date',models.CharField()),
                                    extended_end_date_str = models.functions.Cast('extended_end_date', models.CharField())
                                )
                                .values(
-                                   'short_no', 'grant_no', 'pi_name', 'end_date_str', 'is_extended', 'project_status', 'extended_end_date_str'
+                                   'id','short_no', 'grant_no', 'pi_name', 'end_date_str', 'is_extended', 'project_status', 'extended_end_date_str'
                                )
                             ),
             'heads': json.dumps(HEADS),
@@ -1166,7 +1175,7 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
                     "editable": True,
                     "dropdown": "projects",
                     "width": 220,
-                    "valueField": "project_short_no",
+                    "valueField": "id",
                     "labelField": "project_no"
                     
                 })
@@ -1215,7 +1224,7 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
                     "type": "CharField",
                     "editable": True,
                     "dropdown": "payees",
-                    "valueField":"pan",
+                    "valueField":"id",
                     "labelField": "pan",
                     "width": 200,
                 })
@@ -1234,13 +1243,22 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
         return fields
 
     def get_excel_context_data(self):
+
+        projects = list(
+            Project.objects.values(
+                "id","project_short_no","project_no", 'project_end_date', "extended_end_date", "project_status"
+            ).order_by("project_no")
+            .annotate(
+                end_date_str = models.functions.Cast('project_end_date', models.CharField()),
+                extended_end_date_str = models.functions.Cast('extended_end_date', models.CharField())
+            )
+            .values(
+                'id', 'project_short_no', 'project_no', 'pi_name', 'end_date_str','extended_end_date_str','project_status'
+            )
+        )
+        
         return{
-            "projects": list(
-                Project.objects.values(
-                    "project_short_no",
-                    "project_no"
-                ).order_by("project_no")
-            ),
+            "projects": projects,
             "faculties": list(
                 Faculty.objects.values(
                     'faculty_id', 'pi_name'
@@ -1536,7 +1554,7 @@ class PayeeAdmin(ExcelViewMixin, admin.ModelAdmin):
         "bank_name",
         "account_number",
         "email",
-        "is_active",
+        
     )
     search_fields = (
         "name_of_payee",
@@ -1547,7 +1565,7 @@ class PayeeAdmin(ExcelViewMixin, admin.ModelAdmin):
         "email",
 
     )
-    list_filter = ("payee_type", "is_active")
+    list_filter = ("payee_type", )
 
 custom_admin_site.register(Payee, PayeeAdmin)
 

@@ -371,7 +371,7 @@
     window.payment_types = {{payment_types|safe}};
 
     const ENABLE_GENERIC_FK_DROPDOWN = true;
-    const DATE_VALIDATION_MODELS = ["expenditure", "commitment"];
+    const DATE_VALIDATION_MODELS = ["expenditure", "commitment", "receipt","payment" ];
     
     {% if has_grants %}
     const SEED_GRANTS = {{ seed_grants|safe }};
@@ -496,7 +496,7 @@
 
         if(row.project) {
             const p = window.projects.find(
-                x => String(x.project_short_no) === String(row.project)
+                x => Number(x.id) === Number(row.project)
             );
             if (p) {
                 return p.extended_end_date_str
@@ -700,9 +700,10 @@
             if (field.name === "extension_approved_by") {
                 cols.push({
                     headerName: field.label,
-                    field: "extension_approved_by",
+                    field: "extension_approved_by_name",
                     width: 180,
                     editable: false,
+                    
                     cellStyle: { backgroundColor: "#f1f1f1", color: "#555" }
 
                 });
@@ -817,6 +818,40 @@
                 });
                 return;
             }
+            if (field.name === "financial_year") {
+                colDef.cellEditor = "agTextCellEditor"
+                colDef.cellEditorParams = {
+                    macLength: 7,
+                    placeholder: "YYYY-YY"
+                };
+
+                colDef.valueSetter = params => {
+                    const value = (params.newValue || "").trim();
+
+                    if (!value) {
+                        params.data.financial_year ="";
+                        return true;
+                    }
+
+                    const fyRegex = /^\d{4}-\d{2}$/;
+
+                    if (!fyRegex.test(value)) {
+                        showCellErrorPopup(
+                            params,
+                            "Invalid format. Use YYYY-YY (e.g. 2024-25)"
+                        );
+                        return false;
+                    }
+
+                    removeCellErrorPopup();
+                    params.data.financial_year = value;
+                    trackChange(params.data);
+                    return true;
+                }
+
+                
+            };
+
             
             if (field.name === "faculty") {
                 cols.push({
@@ -1031,39 +1066,46 @@
 
             
             {% endif %}
-
             if(
-                ENABLE_GENERIC_FK_DROPDOWN &&
-                field.type === 'ForeignKey' &&
-                field.dropdown && 
-                !colDef.cellEditor
-            ) {
-                const data = window[field.dropdown] || [];
-                
-                colDef.cellEditor = 'agSelectCellEditor';
-                colDef.cellEditorParams = {
-                    values: data.map(item => item[field.valueField])
-                };
+    ENABLE_GENERIC_FK_DROPDOWN &&
+    field.type === 'ForeignKey' &&
+    field.dropdown && 
+    !colDef.cellEditor
+) {
+    const data = window[field.dropdown] || [];
 
-                colDef.valueFormatter = params => {
-                    const found = data.find(
-                        x => String(x[field.valueField]) === String(params.value)
-                    );
-                    return found ? found[field.labelField] : params.value;
-                };
+    colDef.cellEditor = 'agSelectCellEditor';
 
-                colDef.valuesetter = params => {
-                    const val = params.newValue;
-                    const found = data.find(x => String(x[field.valueField]) === string(val))
-                    if (!found) return false;
+    // Always work with STRING inside dropdown
+    colDef.cellEditorParams = {
+        values: data.map(item => String(item[field.valueField]))
+    };
 
-                    params.data[field.name] =val;
+    colDef.valueFormatter = params => {
+        const found = data.find(
+            x => String(x[field.valueField]) === String(params.value)
+        );
+        return found ? found[field.labelField] : "";
+    };
 
-                    
-                    trackChange(params.data);
-                    return true;
-                }
-            }
+    colDef.valueSetter = params => {
+        const val = params.newValue;
+
+        const found = data.find(
+            x => String(x[field.valueField]) === String(val)
+        );
+
+        if (!found) return false;
+
+        
+        params.data[field.name] = Number(found[field.valueField]);
+
+        trackChange(params.data);
+        return true;
+    };
+}
+ 
+
             
             cols.push(colDef);
         });
@@ -1222,7 +1264,7 @@
                 const payload = preparePayload(row);
                 const pkValue = row[PRIMARY_KEY];
                 const updateResponse = await fetch(`${API_URL}${pkValue}/`, {
-                    method: 'PUT',
+                    method: 'PATCH',
                     credentials:"same-origin",
                     headers: {
                         'Content-Type': 'application/json',
@@ -1264,22 +1306,26 @@
         {% if has_grants %}
         
 
-        if (MODEL_NAME !== 'seedgrant' && row.seed_grant_short) {
-            payload.seed_grant = row.seed_grant_short;
-        }
-
-        if (MODEL_NAME !== 'tdggrant' && row.tdg_grant_short) {
-            payload.tdg_grant = row.tdg_grant_short;
-        }
+        
         
         delete payload.grant_no_display;
         delete payload.seed_grant_short;
         delete payload.tdg_grant_short;
         delete payload.grant_short;
         {% endif %}
+
+        const NULL_ALLOWED_FIELDS = [
+             "extended_end_date",
+             "extension_reason",
+             "extension_approved_by",
+        
+        ];
         
         Object.keys(payload).forEach(key => {
-            if (payload[key] === null || payload[key] === undefined || payload[key] === '') {
+            if (
+                (payload[key] === "" || payload[key] === undefined) &&
+                !NULL_ALLOWED_FIELDS.includes(key)
+            ) {
                 delete payload[key];
             }
         });

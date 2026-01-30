@@ -213,8 +213,7 @@ class TDGGrantResource(resources.ModelResource):
     short_no = fields.Field(column_name="Technology Development short no", attribute="short_no")
     grant_no = fields.Field(column_name="Technology Development Grant no", attribute="grant_no")
     faculty = fields.Field(column_name="Faculty ID", attribute="faculty", widget=ForeignKeyWidget(Faculty, 'faculty_id'))
-    pi_name = fields.Field(column_name=" PI Name", attribute="pi_name")
-    dept = fields.Field(column_name="Dept", attribute="dept")
+    
     title = fields.Field(column_name="Title", attribute="title")
     sanction_date = fields.Field(column_name="Sanction Date", attribute="sanction_date", widget=FlexibleDateWidget())
     end_date = fields.Field(column_name="End Date", attribute="end_date", widget=FlexibleDateWidget())
@@ -232,26 +231,17 @@ class TDGGrantResource(resources.ModelResource):
 
     class Meta:
         model = TDGGrant
-        import_id_fields = ["grant_no"]
+        import_id_fields = ["short_no"]
         skip_unchanged = True
         fields =(
-            "grant_no", "short_no", "pi_name", "dept", "title", "faculty",
+            "grant_no", "short_no", "title", "faculty",
             "sanction_date", "end_date", "budget_year1", "budget_year2",
             "total_budget", "equipment", "consumables", "contingency",
             "travel", "manpower", "others", "furniture",
             "visitor_expenses", "lab_equipment"
 
         )
-        export_order = fields
-
-        def dehydrate_pi_name(self, obj):
-            return obj.faculty.pi_name if obj.faculty else ""
-    
-        def dehydrate_dept(self, obj):
-            return obj.faculty.department if obj.faculty else ""
         
-        def dehydrate_faculty(self, obj):
-            return obj.faculty.faculty_id if obj.faculty else ""
 
 
 
@@ -274,7 +264,7 @@ class ExpenditureResource(resources.ModelResource):
 
      tdg_grant = fields.Field(
          attribute ='tdg_grant',
-         widget = ForeignKeyWidget(SeedGrant, field='short_no')
+         widget = ForeignKeyWidget(TDGGrant, field='short_no')
      )
 
      head = fields.Field(column_name= "Expenditure Head", attribute="head")
@@ -294,13 +284,13 @@ class ExpenditureResource(resources.ModelResource):
             
             seed_exists = SeedGrant.objects.filter(short_no=short_no_value).first()
             if seed_exists:
-                row["seed_grant"] = short_no_value
+                row["seed_grant"] = SeedGrant.objects.get(short_no=short_no_value).id
                 row["tdg_grant"] = None
                 return
             
             tdg_exists = TDGGrant.objects.filter(short_no=short_no_value).first()
             if tdg_exists:
-                row["tdg_grant"] = short_no_value
+                row["tdg_grant"] = TDGGrant.objects.get(short_no=short_no_value).id
                 row["seed_grant"] = None
                 return
            
@@ -362,7 +352,7 @@ class CommitmentResource(resources.ModelResource):
         
         seed_exists = SeedGrant.objects.get(short_no=short_no_value)
         if seed_exists:
-            row["seed_grant"] = short_no_value
+            row["seed_grant"] = SeedGrant.objects.get(short_no=short_no_value).id
             row["tdg_grant"] = None
             return
         
@@ -370,7 +360,7 @@ class CommitmentResource(resources.ModelResource):
         
         tdg_exists = TDGGrant.objects.get(short_no=short_no_value)
         if tdg_exists:
-            row["tdg_grant"] = short_no_value
+            row["tdg_grant"] = TDGGrant.objects.get(short_no=short_no_value).id
             row["seed_grant"] = None
             return
         

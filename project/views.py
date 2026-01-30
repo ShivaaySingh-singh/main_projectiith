@@ -528,6 +528,30 @@ class GenericModelDetailAPIView(APIView):
             return Response(serializer.data)
 
         return Response(serializer.errors, status=400)
+    
+    def patch(self, request, model_name, pk):
+        _, Serializer = self.get_model_and_serializer(model_name)
+        obj = self.get_object(model_name, pk, request.user)
+
+        if not obj:
+             return Response({"error": "Not found"}, status=404)
+
+        data = request.data.copy()
+
+    # 🔒 billinward admin restriction
+        if model_name.lower() == 'billinward' and not request.user.is_superuser:
+            if getattr(request.user, 'role', None) == 'admin':
+                allowed = ['bill_status', 'outward_date', 'remarks']
+                data = {k: v for k, v in data.items() if k in allowed}
+
+        serializer = Serializer(obj,data=data,partial=True, context={'request': request})
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(serializer.errors, status=400)
+
 
     def delete(self, request, model_name, pk):
 
@@ -542,6 +566,9 @@ class GenericModelDetailAPIView(APIView):
 
         obj.delete()
         return Response({"message": "Deleted successfully"}, status=204)
+    
+
+
 
 @api_view(["POST"])
 @permission_classes([IsAdminUser])
