@@ -24,6 +24,7 @@ urlpatterns = [
     path('fund-request/status/', views.request_status, name='request_status'),
     path('fund-request/get-projects/', views.get_projects_by_type, name='get_projects_by_type'),
     path('bill_inwards/', views.inward_bills_view, name='bill_inwards'),
+    path("projects/<str:short_no>/balance-sheet/",views.project_balance_sheet, name="project_balance_sheet")
     
     
 

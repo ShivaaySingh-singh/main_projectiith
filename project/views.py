@@ -16,6 +16,9 @@ from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from .forms import FundRequestForm, AdminRemarkForm
+from collections import defaultdict
+from decimal import Decimal
+from django.http import HttpResponse
 
 from .serializers import (
     ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer,ProjectSerializer,BillInwardSerializer,PaymentSerializer,ReceiptSerializer,
@@ -725,7 +728,82 @@ def inward_bills_view(request):
         return redirect('dashboard')
 
  
+@login_required
 
+def project_balance_sheet(request, short_no):
+   
+    project = get_object_or_404(Project, project_short_no=short_no)
+
+    dist_qs = ProjectSanctionDistribution.objects.filter(
+        project=project
+    ).select_related("head").order_by("project_year", "head__name")
+
+    year_totals = defaultdict(Decimal)
+
+    for row in dist_qs:
+        if row.project_year:
+            year_totals[row.project_year] += row.sanctioned_amount or Decimal("0.00")
+
+    year_budget_list = sorted(year_totals.items(), key=lambda x: x[0])
+    
+    total_budget = sum(year_totals.values(), Decimal("0.00"))
+
+    head_totals = defaultdict(Decimal)
+    for row in dist_qs:
+        head_name = row.head.name if row.head else "Unknown"
+        head_totals[head_name] += row.sanctioned_amount or Decimal("0.00")
+    
+    expenditures = Expenditure.objects.filter(project=project).order_by("date", "id")
+    commitments = Commitment.objects.filter(project=project).order_by("date", "id")
+
+    exp_head_sum = defaultdict(Decimal)
+    com_head_sum = defaultdict(Decimal)
+
+    for e in expenditures:
+        exp_head_sum[e.head] += e.amount
+    
+    for c in commitments:
+        com_head_sum[c.head] += c.gross_amount
+
+    all_heads = set(head_totals.keys()) | set(exp_head_sum.keys()) | set(com_head_sum.keys())
+
+    report_rows = []
+    for head in sorted(all_heads):
+        sanction = head_totals.get(head, Decimal("0.00"))
+        expenditure = exp_head_sum.get(head, Decimal("0.00"))
+        commitment = com_head_sum.get(head, Decimal("0.00"))
+        balance = sanction - (expenditure + commitment)
+
+        report_rows.append({
+            "head": head,
+            "sanction": sanction,
+            "expenditure": expenditure,
+            "commitment": commitment,
+            "balance": balance,
+        })
+    
+    totals = {
+        "budget": sum([r["sanction"] for r in report_rows], Decimal("0.00")),
+        "expenditure": sum([r["expenditure"] for r in report_rows], Decimal("0.00")),
+        "commitment": sum([r["commitment"] for r in report_rows], Decimal("0.00")),
+        "balance": sum([r["balance"] for r in report_rows], Decimal("0.00")),
+    }
+
+    context = {
+        "project": project,
+
+        "year_budget_list": year_budget_list,
+        "total_budget": total_budget,
+        "report_rows": report_rows,
+        "totals": totals,
+        "expenditures": expenditures,
+        "commitments": commitments,
+    }
+
+    return render(request, "project_balance_sheet.html", context)
+
+        
+        
 
 
 

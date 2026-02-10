@@ -13,12 +13,13 @@ from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 from django.utils.html import format_html
+from django.core.serializers.json import DjangoJSONEncoder
 
 import json  #  ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant,
-    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank
+    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName
 )
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
@@ -50,6 +51,12 @@ class ExcelViewMixin:
     
     excel_grant_fields = []  # Override if model has FK to grants
     excel_exclude_fields = ['id']  # Fields to hide in Excel view
+
+    # for UI - only columns 
+
+    excel_extra_fields = []
+
+    excel_field_order = []
     
     # ✅ ONE LINE - Auto-set template for ALL models
     change_list_template = 'admin/change_list_with_excel.html'
@@ -86,13 +93,13 @@ class ExcelViewMixin:
                 # try to detect if it's already JSON (starts with [ or {)
                     trimmed = val.strip()
                     if not (trimmed.startswith('[') or trimmed.startswith('{')):
-                        context_data[k] = json.dumps(val)
+                        context_data[k] = json.dumps(val, cls=DjangoJSONEncoder)
                     else:
                     # keep the string (assume it's already JSON)
                         context_data[k] = val
                 else:
                 # Python object -> dump to JSON string
-                    context_data[k] = json.dumps(val)
+                    context_data[k] = json.dumps(val, cls=DjangoJSONEncoder)
             else:
             # ensure key exists as JSON empty array/object where appropriate
                 if k in ('heads', 'status_choices', 'faculties', 'admin_users'):
@@ -105,7 +112,7 @@ class ExcelViewMixin:
             'model_name': model_name.lower(),
             'model_verbose_name': self.model._meta.verbose_name,
             'fields_config': json.dumps(fields_config),
-            'has_grants': len(self.excel_grant_fields) > 0,
+            'enable_grant_selector': len(self.excel_grant_fields) > 0,
             **context_data,
             'title': f'{self.model._meta.verbose_name} - Excel View',
             'opts': self.model._meta,
@@ -143,6 +150,21 @@ class ExcelViewMixin:
                 field_config['choices'] = [choice[0] for choice in field.choices]
             
             fields.append(field_config)
+
+        fields.extend(getattr(self, "excel_extra_fields", []))
+
+        order = getattr(self, "excel_field_order", [])
+        if order:
+            field_map = {f["name"]: f for f in fields}
+
+            ordered_fields = []
+
+            for key in order:
+                if key in field_map:
+                    ordered_fields.append(field_map.pop(key))
+
+            ordered_fields.extend(field_map.values())
+            fields = ordered_fields
         
         return fields
     
@@ -205,7 +227,7 @@ class CustomAdminSite(admin.AdminSite):
             'Fund Request': ['FundRequest'],
             'Inward' : ['BillInward'],
             'TDS' :['TDSSection', 'TDSRate'],
-            'Supporting Data': ['ReceiptHead', 'Bank', 'PaymentType'],
+            'Supporting Data': ['ReceiptHead', 'Bank', 'PaymentType','CoPiName'],
            
         }
 
@@ -474,6 +496,37 @@ class ProjectAdmin(ExcelViewMixin, ImportExportModelAdmin):
     readonly_fields = ("project_status","extension_approved_by")
     excel_exclude_fields = []
 
+    excel_extra_fields = [
+        {
+            "name": "duration",
+            "label": "Duration",
+            "type": "CharField",
+            "editable": False,
+            "required": False,
+            "width": 150,
+        }
+    ]
+
+    excel_field_order = [
+        "project_short_no",
+        "project_no",
+        "gender",
+        "project_type",
+        "faculty",
+        "pi_name",
+        "co_pi_name",
+        "dept",
+        "project_title",
+        "gst_no",
+        "address_sponsoring_agency",
+        "pincode",
+        "sponsoring_agency",
+        "country",
+        "project_start_date",
+        "project_end_date",
+        "duration"
+    ]
+
     def get_pi_name(self, obj):
         if obj.faculty:
             return obj.faculty.pi_name
@@ -489,6 +542,12 @@ class ProjectAdmin(ExcelViewMixin, ImportExportModelAdmin):
         is_superuser = False
         if hasattr(self, "_current_request"):
             is_superuser = self._current_request.user.is_superuser
+
+        for field in fields:
+            if field["name"] == "co_pi_name":
+                field["dropdown"] = "copis"
+                field["valueField"] = "id"
+                field["labelField"] = "label"
 
         for field in fields:
             if field["name"] == "project_status":
@@ -517,7 +576,17 @@ class ProjectAdmin(ExcelViewMixin, ImportExportModelAdmin):
                 Faculty.objects.values(
                     "faculty_id", "pi_name", "department"
                 )
-            )
+            ),
+
+            "copis": [
+                {
+                    "id": c.id,
+                    "label": f"{c.name} ({c.faculty_id})"
+                }
+
+                for c in CoPiName.objects.all()
+
+            ]
         }
     def save_model(self, request, obj, form, change):
         if obj.is_extended and obj.extension_approved_by is None:
@@ -532,69 +601,64 @@ class ReceiptAdmin(ExcelViewMixin, ImportExportModelAdmin):
     resource_class = ReceiptResource
     list_display = ("receipt_date", "project", "head", "amount", "category", "reference_number")
 
-    search_fields = ("project__project_no", "category", "reference_number")
+    excel_grant_fields = ['seed_grant', 'tdg_grant', 'project']
 
-    autocomplete_fields = ["project"]
 
-    excel_exclude_fields = ['id']
 
-    def save_model(self, request, obj, form, change):
-        obj.clean()  # run final_end_date validation
-        super().save_model(request, obj, form, change)
+    
 
+    excel_exclude_fields = ['id','seed_grant','tdg_grant','project', 'seed_grant_short', 'tdg_grant_short',]
 
     def get_excel_fields_config(self):
         fields = super().get_excel_fields_config()
 
         for field in fields:
-            if field["name"] == "project":
-                field.update({
-                    "type": "ForeignKey",
-                    "editable": True,
-                    "width": 220,
-                    "label": "Project",
-
-                    "dropdown": "projects",
-                    "valueField": "id",
-                    "labelField": "project_no",
-                })
-
             if field["name"] == "head":
                 field.update({
                     "type": "ForeignKey",
                     "editable": True,
                     "dropdown": "heads",
                     "valueField": "id",
-                    "labelField": "name",
-                    "width": 200,
+                    "labeField": "name",
+                    "width": 180,
                 })
-        return fields
+            return fields
     
     def get_excel_context_data(self):
-        projects = list(
-            Project.objects.values(
-                "id","project_short_no",
-                "project_no", 'project_end_date', 'extended_end_date', 'project_status'
-               
-            ).order_by("project_no")
-            .annotate(
-                end_date_str = models.functions.Cast('project_end_date', models.CharField()),
-                extended_end_date_str= models.functions.Cast('extended_end_date', models.CharField())
-        
-            )
-            .values(
-                'id','project_short_no', 'project_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'project_status'
-            )
-            
-        )
-
-        heads = list(
-            ReceiptHead.objects.values("id", "name")
-        )
-
         return {
-            "projects": projects,
-            "heads": heads,
+            'seed_grants': list(
+                SeedGrant.objects.annotate(
+                    end_date_str=models.functions.Cast('end_date', models.CharField()),
+                    extended_end_date_str=models.functions.Cast('extended_end_date', models.CharField())
+                ).values(
+                    'id','short_no','grant_no','pi_name',
+                    'end_date_str','extended_end_date_str','is_extended','project_status'
+                )
+            ),
+
+            'tdg_grants': list(
+                TDGGrant.objects.annotate(
+                    end_date_str=models.functions.Cast('end_date', models.CharField()),
+                    extended_end_date_str=models.functions.Cast('extended_end_date', models.CharField())
+                ).values(
+                    'id','short_no','grant_no','pi_name',
+                    'end_date_str','extended_end_date_str','is_extended','project_status'
+                )
+            ),
+
+            'projects': list(
+                Project.objects.annotate(
+                    end_date_str=models.functions.Cast('project_end_date', models.CharField()),
+                    extended_end_date_str=models.functions.Cast('extended_end_date', models.CharField())
+                ).values(
+                    'id','project_short_no','project_no','pi_name',
+                    'end_date_str','extended_end_date_str','project_status'
+                )
+            ),
+
+            'heads': list(
+                ReceiptHead.objects.values('id','name')
+            )
         }
 
 
@@ -650,6 +714,14 @@ class TDGGrantAdmin(ExcelViewMixin, ImportExportModelAdmin):
     
     def faculty_dept(self,obj):
         return obj.faculty.department if obj.faculty else "-"
+    
+    def extension_approved_by_name(self, obj):
+        return(
+            obj.extension_approved_by.get_full_name()
+            or obj.extension_approved_by.username
+            if obj.extension_approved_by else "_"
+        )
+    extension_approved_by_name.short_description = "Approved By"
 
 
 
@@ -668,15 +740,31 @@ class ExpenditureAdmin(ExcelViewMixin, ImportExportModelAdmin):
         ✅ Added: get_excel_context_data (provides grant data)
     """
     resource_class = ExpenditureResource
-    list_display = ("grant_no", "head", "amount", "date")
+    list_display = ("date","grant_no", "bill_date","head", "amount", )
     search_fields = ("short_no", "head")
     
     # ✅ Tell mixin that this model has grant fields
-    excel_grant_fields = ['seed_grant', 'tdg_grant']
+    excel_grant_fields = ['seed_grant', 'tdg_grant', 'project']
     
     # Hide short numberfrom excel view that is foreign key contains relation
-    excel_exclude_fields = ['id', 'short_no', 'seed_grant', 'tdg_grant']
+    excel_exclude_fields = ['id', 'short_no', 'seed_grant', 'tdg_grant',  'tdg_grant_short','grant_no_dispaly','seed_grant_short', 'tdg_grant_short']
     
+    def get_excel_fields_config(self):
+        fields = super().get_excel_fields_config()
+
+        for field in fields:
+            if field["name"] == "project":
+                field.update({
+                    "type": "ForeignKey",
+                    "editable": True,
+                    "dropdown": "projects",
+                    "valueField": "id",
+                    "labelField": "project_short_no",
+                    "width": 220,
+                })
+
+        return fields
+
     def get_excel_context_data(self):
         """
         Provide grant data for dropdowns in Excel view
@@ -703,6 +791,21 @@ class ExpenditureAdmin(ExcelViewMixin, ImportExportModelAdmin):
                                    'id','short_no', 'grant_no', 'pi_name', 'end_date_str', 'extended_end_date_str', 'is_extended', 'project_status'
                                )
                             ),
+
+            'projects': list(
+                Project.objects.annotate(
+                    end_date_str=models.functions.Cast("project_end_date", models.CharField()),
+                    extended_end_date_str = models.functions.Cast("extended_end_date", models.CharField())
+                ).values(
+                    "id",
+                    "project_short_no",
+                    "project_no",
+                    "pi_name",
+                    "end_date_str",
+                    "extended_end_date_str",
+                    "project_status",
+                )
+            ),
                             
 
             'heads': HEADS,  # Convert list to JSON string
@@ -722,9 +825,9 @@ class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
     search_fields = ("short_no", "head")
     
     # ✅ Grant fields configuration
-    excel_grant_fields = ['seed_grant', 'tdg_grant']
+    excel_grant_fields = ['seed_grant', 'tdg_grant','project']
 
-    excel_exclude_fields = ['id', 'short_no', 'seed_grant', 'tdg_grant']
+    excel_exclude_fields = ['id', 'short_no', 'seed_grant', 'tdg_grant', 'seed_grant_short', 'tdg_grant_short', 'grant_no_display' ]
     
     def get_excel_context_data(self):
         return {
@@ -746,6 +849,20 @@ class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
                                    'id','short_no', 'grant_no', 'pi_name', 'end_date_str', 'is_extended', 'project_status', 'extended_end_date_str'
                                )
                             ),
+            'projects': list(
+                Project.objects.annotate(
+                    end_date_str=models.functions.Cast("project_end_date", models.CharField()),
+                    extended_end_date_str = models.functions.Cast("extended_end_date", models.CharField())
+                ).values(
+                    "id",
+                    "project_short_no",
+                    "project_no",
+                    "pi_name",
+                    "end_date_str",
+                    "extended_end_date_str",
+                    "project_status",
+                )
+            ),
             'heads': json.dumps(HEADS),
         }
 
@@ -1145,10 +1262,11 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
 class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
     resource_class = PaymentResource
 
-    list_display = ("date","project","head","payment_type","payee","utr_no","net_amount")
+    list_display = ("date","head","payment_type","payee","utr_no","net_amount","project")
 
     list_filter = ("payment_type",
         "head",
+        
         "gst_tds_type",
         "tds_section",
         "tds_rate",
@@ -1156,28 +1274,53 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
 
     )
     search_fields = (
-        "project__project_no",
+        
         "payee__name_of_payee",
         "utr_no",
         "payee_account_no",
         "payee_ifsc",
     )
-    excel_exclude_fields = ["id"]
 
+    excel_grant_fields = ["seed_grant", "tdg_grant", "project"]
+    excel_exclude_fields = ["id", "seed_grant", "tdg_grant","project",'seed_grant_short', 'tdg_grant_short',]
     def get_excel_fields_config(self):
         fields = super().get_excel_fields_config()
 
+
         for field in fields:
             
-            if field["name"] == "project":
+            if field["name"] =="project":
                 field.update({
                     "type": "ForeignKey",
                     "editable": True,
-                    "dropdown": "projects",
-                    "width": 220,
-                    "valueField": "id",
-                    "labelField": "project_no"
                     
+                    "dropdown": "projects",
+                    "valueField": "id",
+                    
+                    "width": 220,
+                    
+                    "labelField": "project_short_no",
+                    
+                })
+
+            if field["name"] == "seed_grant":
+                field.update({
+                    "type": "ForeignKey",
+                    "editable": True,
+                    "dropdown": "seed_grants",
+                    "valueField": "id",
+                    "labelField": "short_no",
+                    "width": 200,
+                })
+
+            if field["name"] == "tdg_grant":
+                field.update({
+                    "type": "ForeignKey",
+                    "editable": True,
+                    "dropdown": "tdg_grants",
+                    "valueField": "id",
+                    "labelField": "short_no",
+                    "width": 200,
                 })
                 
             
@@ -1234,66 +1377,83 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
                 "payee_branch_name",
                 "payee_account_no",
                 "payee_ifsc",
-                "payee_pan",
-                "payee_email"
+                
+                "payee_email",
+                "tds_amount",
+                "net_amount",
+
             ]:
                 field["editable"] = False   
 
             
         return fields
-
+    
     def get_excel_context_data(self):
+        return {
+            "projects": list(
+                Project.objects.annotate(
+                    end_date_str=models.functions.Cast(
+                        "project_end_date", models.CharField()
+                    ),
+                    extended_end_date_str=models.functions.Cast(
+                        "extended_end_date", models.CharField()
+                    ),
+                ).values(
+                    "id",
+                    "project_short_no",
+                    "project_no",
+                    "pi_name",
+                    "end_date_str",
+                    "extended_end_date_str",
+                    "project_status",
+                )
+            ),
 
-        projects = list(
-            Project.objects.values(
-                "id","project_short_no","project_no", 'project_end_date', "extended_end_date", "project_status"
-            ).order_by("project_no")
-            .annotate(
-                end_date_str = models.functions.Cast('project_end_date', models.CharField()),
-                extended_end_date_str = models.functions.Cast('extended_end_date', models.CharField())
-            )
-            .values(
-                'id', 'project_short_no', 'project_no', 'pi_name', 'end_date_str','extended_end_date_str','project_status'
-            )
-        )
-        
-        return{
-            "projects": projects,
-            "faculties": list(
-                Faculty.objects.values(
-                    'faculty_id', 'pi_name'
+            "seed_grants": list(
+                SeedGrant.objects.annotate(
+                    end_date_str=models.functions.Cast("end_date", models.CharField()),
+                    extended_end_date_str=models.functions.Cast(
+                        "extended_end_date", models.CharField()
+                    ),
+                ).values(
+                    "id",
+                    "short_no",
+                    "grant_no",
+                    "pi_name",
+                    "end_date_str",
+                    "extended_end_date_str",
+                    "project_status",
+                )
+            ),
+
+            "tdg_grants": list(
+                TDGGrant.objects.annotate(
+                    end_date_str=models.functions.Cast("end_date", models.CharField()),
+                    extended_end_date_str=models.functions.Cast(
+                        "extended_end_date", models.CharField()
+                    ),
+                ).values(
+                    "id",
+                    "short_no",
+                    "grant_no",
+                    "pi_name",
+                    "end_date_str",
+                    "extended_end_date_str",
+                    "project_status",
                 )
             ),
 
             "heads": list(
-                ReceiptHead.objects.values("id", "name")
+                ReceiptHead.objects.values("id", "name").order_by("name")
             ),
 
-            "tds_sections": [
-                {
-                
-                    "id": s.id,
-                    "code": s.section,
-                }
-                for s in TDSSection.objects.all().order_by("section")
-
-            ],
-
-            "tds_rates": [
-                {
-                    "id": r.id,
-                    "section_id": r.section_id,
-                    "percent": float(r.percent)
-                }
-                for r in TDSRate.objects.select_related("section")
-            ],
             "payment_types": list(
                 PaymentType.objects.values("id", "name").order_by("name")
             ),
 
             "banks": list(
-                Bank.objects.values("id", "short_no", "bank_name")
-                .filter(is_active=True)
+                Bank.objects.filter(is_active=True)
+                .values("id", "short_no", "bank_name")
                 .order_by("short_no")
             ),
 
@@ -1310,7 +1470,45 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
                 ).order_by("name_of_payee")
             ),
 
+            "tds_sections": list(
+                TDSSection.objects.values("id", "section").order_by("section")
+            ),
+
+            "tds_rates": list(
+                TDSRate.objects.values("id", "section_id", "percent")
+            ),
         }
+
+    # ==========================================================
+    # Auto Calculations on Save
+    # ==========================================================
+    def save_model(self, request, obj, form, change):
+        # Auto PI info from funding
+        funding = obj.project or obj.seed_grant or obj.tdg_grant
+        if funding:
+            obj.pi_name = getattr(funding, "pi_name", None)
+            faculty = getattr(funding, "faculty", None)
+            obj.pi_email = faculty.email if faculty else None
+
+        # Auto-fill payee snapshot
+        if obj.payee:
+            obj.payee_account_no = obj.payee.account_number
+            obj.payee_bank_name = obj.payee.bank_name
+            obj.payee_branch_name = obj.payee.branch
+            obj.payee_ifsc = obj.payee.ifsc
+            obj.payee_email = obj.payee.email
+            obj.payee_pan = obj.payee.pan
+
+        # Auto TDS calculation
+        if obj.tds_rate and obj.amount:
+            obj.tds_amount = (obj.amount * obj.tds_rate.percent) / 100
+            obj.net_amount = obj.amount - obj.tds_amount
+        else:
+            obj.tds_amount = 0
+            obj.net_amount = obj.amount
+
+        super().save_model(request, obj, form, change)
+
 
     
 
@@ -1453,6 +1651,10 @@ class ReceiptHeadAdmin(admin.ModelAdmin):
 class PaymentTypeAdmin(admin.ModelAdmin):
     list_display = ("name",)
     search_fields = ("name",)
+
+class CoPiNameAdmin(admin.ModelAdmin):
+    list_display = ("faculty_id", "name")
+    search_fields = ("name",)
     
 class BankAdmin(admin.ModelAdmin):
     list_display = (
@@ -1475,20 +1677,27 @@ custom_admin_site.register(TDSRate, TDSRateAdmin)
 custom_admin_site.register(ReceiptHead, ReceiptHeadAdmin)
 custom_admin_site.register(PaymentType, PaymentTypeAdmin)
 custom_admin_site.register(Bank, BankAdmin)
+custom_admin_site.register(CoPiName, CoPiNameAdmin)
 
 
     
 class ProjectSanctionDistributionAdmin(ExcelViewMixin, admin.ModelAdmin):
-    list_display = ("project_no","financial_year",)
-    list_filter = ("financial_year", "head", "department",)
+    list_display = ("project","financial_year", "project_year", "head", "sanctioned_amount")
+    list_filter = ("financial_year", "project_year", "head")
 
-    search_fields = ("project_no", "project_title", "pi_name", "department",)
 
-    ordering = ("project_no", "financial_year", "head")
+    search_fields = ("project__project_no", "project__project_short_no")
 
-    autocomplete_fields = ["project", "faculty", "head"]
+    
+    
+    excel_exclude_fields = [
+        "id",
+        
+    ]
 
-    excel_exclude_fields = ["id", "project_no", "project_title","pi_name", "department",]
+    
+
+    
 
     def get_excel_fields_config(self):
         fields = super().get_excel_fields_config()
@@ -1504,6 +1713,9 @@ class ProjectSanctionDistributionAdmin(ExcelViewMixin, admin.ModelAdmin):
                     "width": 200,
                 })
 
+            
+
+
             if field["name"] == "head":
                 field.update({
                     "type": "ForeignKey",
@@ -1517,20 +1729,21 @@ class ProjectSanctionDistributionAdmin(ExcelViewMixin, admin.ModelAdmin):
     
     def get_excel_context_data(self):
         return {
+
+            
             "projects": list(
                 Project.objects.values(
-                    
-                    "project_no",
+                    "id",
                     "project_short_no",
-                ).order_by("project_short_no")
+                    "project_no",
+                    
+                ).order_by("project_short_no") 
+                
             ),
-            "faculties": list(
-                Faculty.objects.values(
-                    "faculty_id",
-                    "pi_name",
-                    "department",
-                )
-            ),
+
+          
+
+        
             "heads": list(
                 ReceiptHead.objects.values(
                     "id",
@@ -1539,9 +1752,7 @@ class ProjectSanctionDistributionAdmin(ExcelViewMixin, admin.ModelAdmin):
             ),
         }
     
-    def save_model(self, request, obj, form, change):
-        obj.clean()
-        super().save_model(request, obj, form, change)
+    
 
 custom_admin_site.register(ProjectSanctionDistribution, ProjectSanctionDistributionAdmin)
 

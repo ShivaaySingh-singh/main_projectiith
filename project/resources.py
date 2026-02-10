@@ -4,6 +4,42 @@ from import_export.widgets import DateWidget, ForeignKeyWidget
 from datetime import datetime, date
 import xlrd
 from django.core.exceptions import ValidationError
+from import_export.widgets import Widget
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
+
+
+class FundingObejctWidget(Widget):
+    """
+    Handles Project / SeedGrant /TDGGrant via short_no
+
+
+    """
+
+    MODEL_LOOKUP = [
+        (SeedGrant, "short_no"),
+        (TDGGrant, "short_no"),
+        (Project, "project_short_no"),
+    ]
+
+    def clean(self, value, row=None, *args, **kwargs):
+        if not value:
+            return None
+        value = value.strip()
+
+        for model, field in self.MODEL_LOOKUP:
+            try:
+                return model.objects.get(**{field: value})
+            except ObjectDoesNotExist:
+                continue
+
+        raise ValueError(f"No Project / Grant fould for: {value}")
+        
+    def render(self, value, obj=None):
+        if not value:
+            return ""
+            
+        return str(value)
 
 
 
@@ -259,12 +295,18 @@ class ExpenditureResource(resources.ModelResource):
      # Explicitly define Foreignkey fields with widget
      seed_grant = fields.Field(
          attribute='seed_grant',
-         widget=ForeignKeyWidget(SeedGrant, field='short_no')
+         widget=ForeignKeyWidget(SeedGrant, field='id')
      )
 
      tdg_grant = fields.Field(
          attribute ='tdg_grant',
-         widget = ForeignKeyWidget(TDGGrant, field='short_no')
+         widget = ForeignKeyWidget(TDGGrant, field='id')
+     )
+
+     project = fields.Field(
+         attribute='project',
+         widget=ForeignKeyWidget(Project, field='id')
+         
      )
 
      head = fields.Field(column_name= "Expenditure Head", attribute="head")
@@ -282,19 +324,26 @@ class ExpenditureResource(resources.ModelResource):
                 raise ValueError("Grant Short No is requiredbut missing")
             
             
-            seed_exists = SeedGrant.objects.filter(short_no=short_no_value).first()
-            if seed_exists:
-                row["seed_grant"] = SeedGrant.objects.get(short_no=short_no_value).id
+            seed = SeedGrant.objects.filter(short_no=short_no_value).first()
+            if seed:
+                row["seed_grant"] = seed.id
                 row["tdg_grant"] = None
+                row["project"] = None
                 return
             
-            tdg_exists = TDGGrant.objects.filter(short_no=short_no_value).first()
-            if tdg_exists:
-                row["tdg_grant"] = TDGGrant.objects.get(short_no=short_no_value).id
+            tdg = TDGGrant.objects.filter(short_no=short_no_value).first()
+            if tdg:
+                row["tdg_grant"] = tdg.id
                 row["seed_grant"] = None
+                row["project"] = None
                 return
            
-            
+            proj = Project.objects.filter(project_no=short_no_value).first()
+            if proj:
+                row["project"] = proj.id
+                row["seed_grant"] = None
+                row["tdg_grant"] = None
+                return
 
             raise ValueError(f"Grant with Short_no '{short_no_value}' not found in Seed or TDG")
      
@@ -304,7 +353,7 @@ class ExpenditureResource(resources.ModelResource):
         import_id_fields = []  # let Django auto-create IDs
         skip_unchanged = True
         fields = (
-            "date", "seed_grant", "tdg_grant",
+            "date", "seed_grant", "tdg_grant", "project",
             "short_no", "grant_no", "head",
             "particulars", "amount", "remarks"
         )
@@ -327,12 +376,17 @@ class CommitmentResource(resources.ModelResource):
     # Explicitly define Foreignkey fields with widget
     seed_grant = fields.Field(
          attribute='seed_grant',
-         widget=ForeignKeyWidget(SeedGrant, field='short_no')
+         widget=ForeignKeyWidget(SeedGrant, field='id')
     )
 
     tdg_grant = fields.Field(
          attribute ='tdg_grant',
-         widget = ForeignKeyWidget(SeedGrant, field='short_no')
+         widget = ForeignKeyWidget(SeedGrant, field='id')
+    )
+
+    project = fields.Field(
+        attribute='project',
+        widget=ForeignKeyWidget(Project, field='id')
     )
 
     short_no = fields.Field(attribute="short_no", readonly = True)
@@ -350,29 +404,36 @@ class CommitmentResource(resources.ModelResource):
             raise ValueError("Grant Short No is required but missing")
         
         
-        seed_exists = SeedGrant.objects.get(short_no=short_no_value)
-        if seed_exists:
-            row["seed_grant"] = SeedGrant.objects.get(short_no=short_no_value).id
+        seed = SeedGrant.objects.filter(short_no=short_no_value).first()
+        if seed:
+            row["seed_grant"] = seed.id
             row["tdg_grant"] = None
+            row["project"] = None
             return
         
         
         
-        tdg_exists = TDGGrant.objects.get(short_no=short_no_value)
-        if tdg_exists:
-            row["tdg_grant"] = TDGGrant.objects.get(short_no=short_no_value).id
+        tdg = TDGGrant.objects.filter(short_no=short_no_value).first()
+        if tdg:
+            row["tdg_grant"] = tdg.id
             row["seed_grant"] = None
+            row["project"] = None
             return
         
+        proj = Project.objects.filter(project_no=short_no_value).first()
+        if proj:
+            row["project"] = proj.id
+            row["seed_grant"] = None
+            row["tdg_grant"] = None
 
         raise ValueError(f"Grant with short_no '{short_no_value}' not found!")
     
     class Meta:
         model = Commitment
-        exclude = ("id","seed_grant", "tdg_grant")  # don't include internal ID in Excel
+        exclude = ("id",)  # don't include internal ID in Excel
         import_id_fields = []  # let Django auto-create IDs
         fields = (
-            "date", 
+            "date", "seed_grant", "tdg_grant", "project",
             "short_no", "grant_no", "head",
             "particulars", "gross_amount", "remarks"
         )
@@ -394,11 +455,13 @@ class PaymentResource(resources.ModelResource):
     # -------------------------
     # Core references
     # -------------------------
-    project = fields.Field(
+    funding_object = fields.Field(
         column_name="Project No",
-        attribute="project",
-        widget=ForeignKeyWidget(Project, "project_no")
+        attribute="funding_object",
+        widget=FundingObejctWidget()
+
     )
+    
 
     head = fields.Field(
         column_name="Head",
@@ -512,7 +575,7 @@ class PaymentResource(resources.ModelResource):
         fields = (
             "id",
             "date",
-            "project",
+            "funding_object",
             "head",
             "payment_type",
             "payee",

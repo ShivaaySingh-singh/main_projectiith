@@ -1,7 +1,29 @@
 from rest_framework import serializers
+from django.contrib.contenttypes.models import ContentType
 from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project,BillInward,Faculty, Payment, Receipt, TDSSection,TDSRate, ProjectSanctionDistribution, ReceiptHead, Payee
 import re
 
+
+class FundingRelatedSerializer(serializers.ModelSerializer):
+    def validate(self, data):
+        funding_fields = [
+            data.get("seed_grant"),
+            data.get("tdg_grant"),
+            data.get("project"),
+        ]
+
+        selected = [f for f in funding_fields if f is not None]
+
+        if len(selected) == 0:
+            raise serializers.ValidationError(
+                "Please select a funding source (Seed / TDG/ Project)."
+            )
+        
+        if len(selected) > 1:
+            raise serializers.ValidationError(
+                "Only one funding source is allowed."
+            )
+        return data
 # ✅ Base Serializer with Grant Support
 class GrantRelatedSerializer(serializers.ModelSerializer):
     """Base serializer for models with seed_grant/tdg_grant FK"""
@@ -59,40 +81,36 @@ class GrantRelatedSerializer(serializers.ModelSerializer):
 
 
 # ✅ Expenditure Serializer
-class    ExpenditureSerializer(GrantRelatedSerializer):
+class    ExpenditureSerializer(FundingRelatedSerializer):
     seed_grant = serializers.PrimaryKeyRelatedField(queryset=SeedGrant.objects.all(), allow_null=True, required=False)
 
     tdg_grant = serializers.PrimaryKeyRelatedField(queryset=TDGGrant.objects.all(), allow_null=True, required=False)
 
-     
+    project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), allow_null=True, required=False)
+    
+    grant_no_display = serializers.SerializerMethodField()
+    seed_grant_short = serializers.CharField(source="seed_grant.short_no", read_only=True, allow_null=True)
+    tdg_grant_short = serializers.CharField(source="tdg_grant.short_no", read_only=True, allow_null=True)
+
+    def get_grant_no_display(self, obj):
+        if obj.seed_grant:
+            return obj.seed_grant.grant_no
+        if obj.tdg_grant:
+            return obj.tdg_grant.grant_no
+        if obj.project:
+            return obj.project.project_no
+        return ""
+
     class Meta:
         model = Expenditure
         fields = [
-            'id', 'date', 'head', 'particulars', 'amount', 'remarks',
-            'seed_grant', 'tdg_grant',
-            'grant_no_display', 'seed_grant_short', 'tdg_grant_short'  ]
+            "id", "date","bill_date", "head", "particulars", "amount", "remarks",
+            "seed_grant", "tdg_grant", "project",
+            "grant_no_display", "seed_grant_short", "tdg_grant_short",
+        ]
 
-   
 
-
-    def validate(self, data):
-        project = data.get("seed_grant") or data.get("tdg_grant")
-        date_val = data.get("date")
-
-        if project and date_val:
-            effective_end = project.get_effective_end_date()
-
-            if date_val > effective_end:
-                raise serializers.ValidationError(
-                    "This project is expired. Please contact admin to extend the project."
-                )
-
-            if project.project_status != "ONGOING":
-                raise serializers.ValidationError(
-                    "This project is not active. Please contact admin."
-                )
-
-        return data
+    
     
     
 
@@ -100,35 +118,31 @@ class    ExpenditureSerializer(GrantRelatedSerializer):
 
 
 # ✅ Commitment Serializer
-class CommitmentSerializer(GrantRelatedSerializer):
+class CommitmentSerializer(FundingRelatedSerializer):
     seed_grant = serializers.PrimaryKeyRelatedField(queryset=SeedGrant.objects.all(), allow_null=True, required=False)
     tdg_grant = serializers.PrimaryKeyRelatedField(queryset=TDGGrant.objects.all(), allow_null=True, required=False )
-    class Meta:
-        model = Commitment
-        fields = [
-            'id', 'date', 'head', 'particulars', 'gross_amount', 'remarks',
-            'seed_grant', 'tdg_grant',
-            'grant_no_display', 'seed_grant_short', 'tdg_grant_short'
-        ]
-    def validate(self, data):
-        project = data.get("seed_grant") or data.get("tdg_grant")
-        date_val = data.get("date")
-
-        if project and date_val:
-            effective_end = project.get_effective_end_date()
-
-            if date_val > effective_end:
-                raise serializers.ValidationError(
-                    "This project is expired. Please contact admin to extend the project."
-                )
-
-            if project.project_status != "ONGOING":
-                raise serializers.ValidationError(
-                    "This project is not active. Please contact admin."
-                )
-
-        return data
+    project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), allow_null=True, required=False)
     
+    grant_no_display = serializers.SerializerMethodField()
+    seed_grant_short = serializers.CharField(source="seed_grant.short_no", read_only=True, allow_null=True)
+    tdg_grant_short = serializers.CharField(source="tdg_grant.short_no", read_only=True, allow_null=True)
+
+    def get_grant_no_display(self, obj):
+        if obj.seed_grant:
+            return obj.seed_grant.grant_no
+        if obj.tdg_grant:
+            return obj.tdg_grant.grant_no
+        if obj.project:
+            return obj.project.project_no
+        return ""
+
+    class Meta:
+        model = Expenditure
+        fields = [
+            "id", "date", "bill_date","head", "particulars", "amount", "remarks",
+            "seed_grant", "tdg_grant", "project",
+            "grant_no_display", "seed_grant_short", "tdg_grant_short",
+        ]
     
 
  
@@ -136,6 +150,8 @@ class CommitmentSerializer(GrantRelatedSerializer):
 
 # ✅ SeedGrant Serializer (Simple - no FK relations)
 class SeedGrantSerializer(serializers.ModelSerializer):
+
+    dept = serializers.CharField(required=False, allow_blank=True)
     
     pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     faculty_department = serializers.CharField(source="faculty.department", read_only=True)
@@ -205,7 +221,7 @@ class SeedGrantSerializer(serializers.ModelSerializer):
     def create(self,validated_data):
         user = self.context["request"].user
 
-        validated_data = self._protect_system_fields(self, validated_data)
+        validated_data = self._protect_system_fields(validated_data)
 
 
         if not user.is_superuser:
@@ -257,6 +273,8 @@ class SeedGrantSerializer(serializers.ModelSerializer):
 
 # ✅ TDGGrant Serializer (Simple - no FK relations)
 class TDGGrantSerializer(serializers.ModelSerializer):
+
+    dept = serializers.CharField(required=False, allow_blank=True)
     
     pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     faculty_department = serializers.CharField(source="faculty.department", read_only=True)
@@ -267,11 +285,11 @@ class TDGGrantSerializer(serializers.ModelSerializer):
     class Meta:
         model = TDGGrant
         fields = '__all__'
-        read_only_fields = ['short_no']
+        read_only_fields = ['project_status']
 
     def validate(self, attrs):
         is_extended = attrs.get("is_extended",
-                                getattr(self.instance, "is_extended", False)
+                                getattr(self.instance, "is_extended"   , False)
         )
 
         if self.instance and is_extended is False:
@@ -363,6 +381,8 @@ class TDGGrantSerializer(serializers.ModelSerializer):
         return obj.get_effective_end_date()
 
 class ProjectSerializer(serializers.ModelSerializer):
+
+    duration = serializers.CharField(read_only=True)
     class Meta:
         model = Project
         fields = '__all__'
@@ -558,129 +578,163 @@ class BillInwardSerializer(serializers.ModelSerializer):
         return False
     
 class PaymentSerializer(serializers.ModelSerializer):
+
+    seed_grant = serializers.PrimaryKeyRelatedField(
+        queryset=SeedGrant.objects.all(), allow_null=True, required=False
+    )
+    tdg_grant = serializers.PrimaryKeyRelatedField(
+        queryset=TDGGrant.objects.all(), allow_null=True, required=False
+    )
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Project.objects.all(), allow_null=True, required=False
+    )
+
+    grant_no_display = serializers.SerializerMethodField()
+    short_no = serializers.SerializerMethodField()
+    
+
+    
     pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     tds_section = serializers.IntegerField(source="tds_section.id", read_only=False,allow_null=True)
     tds_rate = serializers.IntegerField(source="tds_rate.id", read_only=False, allow_null=True)
     
-    
-    def validate(self, data):
-        project = data.get("project")
-        date_val = data.get("date")
-
-        if project and date_val:
-            final_end = project.final_end_date
-
-            if date_val > final_end:
-                raise serializers.ValidationError(
-                    "This project is expired. Please contact admin to extend."
-            )
-
-            if project.project_status == "CLOSED":
-                raise serializers.ValidationError(
-                      "This project is closed. Please contact admin."
-                )
-            return data
-
 
     class Meta:
         model = Payment
-        fields = '__all__'            
+        fields = [
+            "id",
+            "date",
+            "head",
+            "payment_type",
+            "payee",
+            "bank",
+            "amount",
+            "tds_section",
+            "tds_rate",
+            "tds_amount",
+            "net_amount",
+            "purpose",
+            "seed_grant",
+            "tdg_grant",
+            "project",
+            "grant_no_display",
+            "short_no",
+        ]
+
+    def get_grant_no_display(self, obj):
+        if obj.seed_grant:
+            return obj.seed_grant.grant_no
+        if obj.tdg_grant:
+            return obj.tdg_grant.grant_no
+        if obj.project:
+            return obj.project.project_no
+        return ""
+
+    def get_short_no(self, obj):
+        if obj.seed_grant:
+            return obj.seed_grant.short_no
+        if obj.tdg_grant:
+            return obj.tdg_grant.short_no
+        if obj.project:
+            return obj.project.project_short_no
+        return ""      
 
 class ReceiptSerializer(serializers.ModelSerializer):
+    seed_grant = serializers.PrimaryKeyRelatedField(queryset=SeedGrant.objects.all(), allow_null=True, required=False)
 
-    def validate(self, data):
-        project = data.get("project")
-        date_val = data.get("receipt_date")
+    tdg_grant = serializers.PrimaryKeyRelatedField(queryset=TDGGrant.objects.all(), allow_null=True, required=False)
 
-        if project and date_val:
-            effective_end = project.get_effective_end_date()
-
-            if date_val > effective_end:
-                raise serializers.ValidationError(
-                    "This project is expired. Please contact admin to extend."
-            )
-
-            if project.project_status == "CLOSED":
-                raise serializers.ValidationError(
-                      "This project is closed. Please contact admin."
-                )
-            return data
+    project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), allow_null=True, required= False)
+    
+    grant_no_display = serializers.SerializerMethodField()
+    short_no = serializers.SerializerMethodField()
     class Meta:
         model = Receipt
-        fields = '__all__'
+        fields = 'id',"date", 'receipt_date', 'head','amount', 'seed_grant', 'tdg_grant', 'project','grant_no_display', 'short_no',
 
+    def get_grant_no_display(self, obj):
+            if obj.seed_grant:
+                return obj.seed_grant.grant_no
+            if obj.tdg_grant:
+                return obj.tdg_grant.grant_no
+            if obj.project:
+                return obj.project.project_no
+            return ""
+
+    def get_short_no(self, obj):
+        if obj.seed_grant: 
+            return obj.seed_grant.short_no
+        if obj.tdg_grant:
+            return obj.tdg_grant.short_no
+        if obj.project:
+            return obj.project.project_short_no
+        return ""
         
 
 
 class ProjectSanctionDistributionSerializer(serializers.ModelSerializer):
+   
+    
+    
     project = serializers.PrimaryKeyRelatedField(
         queryset=Project.objects.all()
     )
 
-    faculty = serializers.SlugRelatedField(
-        slug_field="faculty_id",
-        queryset=Faculty.objects.all(),
-        allow_null=True,
-        required=False
-    )
+    project_no_display = serializers.SerializerMethodField()
+    project_short_no_display = serializers.SerializerMethodField()
+   
 
-    head = serializers.PrimaryKeyRelatedField(
-        queryset=ReceiptHead.objects.all()
-    )
+    
 
-    project_no = serializers.CharField(read_only=True)
-    project_title = serializers.CharField(read_only=True)
-    pi_name = serializers.CharField(read_only=True)
-    department = serializers.CharField(read_only=True)
+    
+
+    
 
     class Meta:
         model = ProjectSanctionDistribution
         fields = [
             "id",
             "project",
-            "faculty",
+            "project_no_display",
+            "project_short_no_display",
             "financial_year",
+            "project_year",
             "head",
             "sanctioned_amount",
-            "project_no",
-            "project_title",
-            "pi_name",
-            "department",
             "remarks",
         ]
 
-        read_only_fields = [
-            "project_no",
-            "project_title",
-            "pi_name",
-            "department",
-        ]
+        
+
+    def get_project_no_display(self, obj):
+        return obj.project.project_no if obj.project else ""
+
+    def get_project_short_no_display(self, obj):
+        return obj.project.project_short_no if obj.project else ""
 
     def validate_financial_year(self, value):
         if not re.match(r'^\d{4}-\d{2}$', value):
             raise serializers.ValidationError(
                 "Financial year must be in format YYYY-YY (e.g. 2024-25)"
             )
-        
-        
+        return value
+
+    def validate_project_year(self, value):
+        if value < 1:
+            raise serializers.ValidationError("Project year must be >= 1.")
         return value
 
     def validate_sanctioned_amount(self, value):
         if value < 0:
-            raise serializers.ValidationError(
-                "Sanctioned amount cannot be negative."
-            )
+            raise serializers.ValidationError("Sanctioned amount cannot be negative.")
         return value
-    
-    def validate(self, data):
-        project = data.get("project")
-        financial_year = data.get("financial_year")
-        head = data.get("head")
 
+    def validate(self, data):
         qs = ProjectSanctionDistribution.objects.filter(
-            project=project,
-            financial_year=financial_year,
-            head=head,
+            project=data.get("project"),
+            financial_year=data.get("financial_year"),
+            project_year=data.get("project_year"),
+            head=data.get("head"),
         )
 
         if self.instance:
@@ -688,10 +742,11 @@ class ProjectSanctionDistributionSerializer(serializers.ModelSerializer):
 
         if qs.exists():
             raise serializers.ValidationError(
-                "Sanction distribution already exists for this project, year and head."
+                "This head already exists for this project + FY + project year."
             )
-        return data 
-    
+
+        return data
+        
 class PayeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payee

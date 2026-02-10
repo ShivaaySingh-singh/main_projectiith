@@ -244,7 +244,7 @@
 
 <!-- ✅ NEW: Search Bar -->
 <div class="search-bar">
-    {% if has_grants %}
+    {% if enable_grant_selector %}
     <div class="search-input-group">
         <label> Grant No:</label>
         <input type="text" id="searchGrantNo" placeholder="Search by grant number or short no...">
@@ -341,7 +341,7 @@
     console.log(" TDS_SECTIONS:", {{ tds_sections|safe }});
     console.log(" TDS_RATES:", {{ tds_rates|safe }});
 
-    {% if has_grants %}
+    {% if enable_grant_selector %}
     console.log(" SEED_GRANTS:", {{ seed_grants|safe }});
     console.log(" TDG_GRANTS:", {{ tdg_grants|safe }});
     console.log(" HEADS:", {{ heads|safe }});
@@ -359,13 +359,14 @@
     window.heads = {{ heads|safe }};
     window.projects = {{ projects|safe }};
     window.faculties = {{ faculties|safe }};
+    window.copis = {{ copis|default:"[]"|safe}};
     const ADMIN_USERS = {{ admin_users|safe }};
     const API_URL = `/api/${MODEL_NAME}/`;
     const FIELDS_CONFIG = {{ fields_config|safe }};
     const FACULTIES = {{ faculties|safe }};
     const TDS_SECTIONS = {{ tds_sections|safe}};
     const TDS_RATES = {{tds_rates|safe}};
-    const HAS_GRANTS = {{ has_grants|lower }};
+    const HAS_GRANTS_SELECTOR = {{ enable_grant_selector|lower }};
     window.payees = {{payees|safe}};
     window.banks = {{banks|safe}};
     window.payment_types = {{payment_types|safe}};
@@ -373,7 +374,7 @@
     const ENABLE_GENERIC_FK_DROPDOWN = true;
     const DATE_VALIDATION_MODELS = ["expenditure", "commitment", "receipt","payment" ];
     
-    {% if has_grants %}
+    {% if enable_grant_selector %}
     const SEED_GRANTS = {{ seed_grants|safe }};
     const TDG_GRANTS = {{ tdg_grants|safe }};
     const HEADS = {{ heads|safe }};
@@ -494,10 +495,9 @@
             }
         }
 
-        if(row.project) {
-            const p = window.projects.find(
-                x => Number(x.id) === Number(row.project)
-            );
+        if (row.project) {
+            const p = window.projects.find(x => String(x.id) === String(row.project));
+        
             if (p) {
                 return p.extended_end_date_str
                     ? p.extended_end_date_str
@@ -582,9 +582,10 @@
             pinned: 'left',
             cellStyle: {backgroundColor: '#f8f9fa', fontweight: 'bold'},
         });
+
         
          
-        {% if has_grants %}
+        {% if enable_grant_selector %}
         cols.push({
             headerName: "Grant Number",
             field: "grant_no_display",
@@ -614,76 +615,118 @@
             cellEditorParams: {
                 values: [
                     ...(SEED_GRANTS || []).map(g => `${g.short_no} (Seed)`),
-                    ...(TDG_GRANTS || []).map(g => `${g.short_no} (TDG)`)
+                    ...(TDG_GRANTS || []).map(g => `${g.short_no} (TDG)`),
+                    ...(window.projects || []).map(p=> `${p.project_short_no} (Project)`)
                 ]
             },
             valueGetter: params => {
                 if (params.data.seed_grant_short) return `${params.data.seed_grant_short} (Seed)`;
                 if (params.data.tdg_grant_short) return `${params.data.tdg_grant_short} (TDG)`;
+
+                if (params.data.project) {
+                    const p = window.projects.find(
+                        x => String(x.id) === String(params.data.project)
+
+                    );
+                    return p ? `${p.project_short_no} (Project)` : '';
+                }
                 return '';
             },
             valueSetter: params => {
                 const value = params.newValue;
                 if (!value) return false;
                 
-                const match = value.match(/^(\S+)\s+\((Seed|TDG)\)$/);
-                if (match) {
-                    const [, shortNo, type] = match;
-                    
-                    if (type === 'Seed') {
-                        const grant = SEED_GRANTS.find(g => g.short_no === shortNo);
-                        if (grant) {
+                const match = value.match(/^(\S+)\s+\((Seed|TDG|Project)\)$/);
+                if (!match) return false;
+                
+                const [, shortNo, type] = match;
 
-                            if (grant.status === "EXPIRED") {
-                                alert("This project is expired. Please contact admin to extend it.")
-                                return false;
-                            }
-                            params.data.seed_grant = grant.id;
-                            params.data.seed_grant_short = shortNo;
-                            params.data.grant_no_display = grant.grant_no;
-                            params.data.tdg_grant = null;
-                            params.data.tdg_grant_short = null;
+                params.data.seed_grant = null;
+                params.data.seed_grant_short = null;
+                params.data.tdg_grant = null;
+                params.data.tdg_grant_short = null;
+                params.data.project = null;
+
+
+                    
+                if (type === 'Seed') {
+                    const g = SEED_GRANTS.find(g => g.short_no === shortNo);
+                    
+                    if (!g) return false;
+
+                    params.data.seed_grant = g.id;
+                    params.data.seed_grant_short = g.short_no;
+                    params.data.grant_no_display = g.grant_no;    
 
                             
 
                            
-                        }
-                    } else {
-                        const grant = (TDG_GRANTS || []).find(g => g.short_no === shortNo);
-                        if (grant) {
+                        
+                } 
+                else if (type === "TDG") {
+                    const g = TDG_GRANTS.find(x => x.short_no === shortNo);
+                    if (!g) return false;
 
-                            if(grant.status === "EXPIRED") {
-                                alert("This project is expired. Please contact admin to extend it.")
-                                return false;
-                            }
-                            params.data.tdg_grant = grant.id;
-                            params.data.tdg_grant_short = shortNo;
-                            params.data.grant_no_display = grant.grant_no;
-                            params.data.seed_grant = null;
-                            params.data.seed_grant_short = null;
-                            
-                        }
-                    }
-                    
-                    trackChange(params.data);
-                    params.api.refreshCells({
-                        rowNodes: [params.node],
-                        columns: ['grant_no_display'],
-                        force: true
-                    });
-                    
-                    return true;
+                   params.data.tdg_grant = g.id;
+                   params.data.tdg_grant_short = g.short_no;
+                   params.data.grant_no_display = g.grant_no;
+                } 
+                
+                else if (type === "Project") {
+                    const p = window.projects.find(x => x.project_short_no === shortNo);
+                    if (!p) return false;
+
+                    params.data.project = p.id;
+                    params.data.grant_no_display = p.project_no;
                 }
-                return false;
-            }
+                
+                trackChange(params.data);
+                
+                params.api.refreshCells({
+                    rowNodes: [params.node],
+                    columns: ['grant_no_display'],
+                    force: true
+                });
+                    
+                return true;
+                }
+                
+            
         });
         {% endif %}
+
+        if (MODEL_NAME === "projectsanctiondistribution") {
+            cols.push({
+                headerName: "Project Short No",
+                field: "project_short_no_display",
+                width: 180,
+                editable: false,
+                cellStyle: { backgroundColor: "#f1f1f1", color: "#555", fontWeight: "600"},
+            });
+
+            cols.push({
+                headerName: "Project No",
+                field: "project_no_display",
+                width: 220,
+                editable: false,
+                cellStyle: { backgroundColor: "#f1f1f1", color: "#555", fontWeight: "600"},
+
+
+            });
+        }
         
         FIELDS_CONFIG.forEach(field => {
             
             if (field.name === "id") return;
 
             if (field.name === PRIMARY_KEY) return;
+
+            const colDef = {
+                headerName: field.label,
+                field: field.name,
+                width: field.width || 220,
+                editable: field.editable,
+            }
 
             if (field.name === "project_status") {
                 cols.push({
@@ -771,9 +814,10 @@
             }
 
 
-
-            if (field.name === 'PRIMARY_KEY' || field.name === 'seed_grant' || field.name === 'tdg_grant') {
-                return;
+            if (MODEL_NAME !== "projectsanctiondistribution") {
+                if (field.name === 'PRIMARY_KEY' || field.name === 'seed_grant' || field.name === 'tdg_grant' || field.name === 'project' ) {
+                    return;
+                }
             }
 
             if(field.name === "tds_section"){
@@ -966,12 +1010,7 @@
                 
             
             
-            const colDef = {
-                headerName: field.label,
-                field: field.name,
-                width: field.width || 150,
-                editable: field.editable,
-            };
+            
 
             if(field.name === "whom_to") {
                 colDef.cellEditor = "agSelectCellEditor";
@@ -1013,7 +1052,7 @@
                         return true;
                     }
                 
-                    if (DATE_VALIDATION_MODELS.includes(MODEL_NAME)) {
+                    if (DATE_VALIDATION_MODELS.includes(MODEL_NAME) && field.name === "bill_date") {
                         const result = validateDateForRow(params.data, newDate);
                 
                         if (!result.ok) {
@@ -1058,7 +1097,7 @@
                 colDef.cellEditorParams = { values: field.choices };
             }
             
-            {% if has_grants %}
+            {% if enable_grant_selector %}
             if (field.name === 'head') {
                 colDef.cellEditor = 'agSelectCellEditor';
                 colDef.cellEditorParams = { values: HEADS };
@@ -1067,43 +1106,68 @@
             
             {% endif %}
             if(
-    ENABLE_GENERIC_FK_DROPDOWN &&
-    field.type === 'ForeignKey' &&
-    field.dropdown && 
-    !colDef.cellEditor
-) {
-    const data = window[field.dropdown] || [];
+                ENABLE_GENERIC_FK_DROPDOWN &&
+                field.type === 'ForeignKey' &&
+                field.dropdown 
+    
+            ) {
+                const data = window[field.dropdown] || [];
 
-    colDef.cellEditor = 'agSelectCellEditor';
+                colDef.cellEditor = 'agSelectCellEditor';
 
-    // Always work with STRING inside dropdown
-    colDef.cellEditorParams = {
-        values: data.map(item => String(item[field.valueField]))
-    };
+                // Always work with STRING inside dropdown
+                colDef.cellEditorParams = {
+                    values:["", ...data.map(item => String(item[field.valueField]))]
+                };
 
-    colDef.valueFormatter = params => {
-        const found = data.find(
-            x => String(x[field.valueField]) === String(params.value)
-        );
-        return found ? found[field.labelField] : "";
-    };
+                colDef.valueFormatter = params => {
+                    const found = data.find(
+                        x => String(x[field.valueField]) === String(params.value)
+                    );
+                    return found ? found[field.labelField] : "";
+                };
 
-    colDef.valueSetter = params => {
-        const val = params.newValue;
+                colDef.valueSetter = params => {
+                    const val = params.newValue;
 
-        const found = data.find(
-            x => String(x[field.valueField]) === String(val)
-        );
-
-        if (!found) return false;
-
+                    if (val === "" || val == null) {
+                        params.data[field.name] = null;
+                        trackChange(params.data);
+                        return true;
+                    }
         
-        params.data[field.name] = Number(found[field.valueField]);
 
-        trackChange(params.data);
-        return true;
-    };
-}
+                    const found = data.find(
+                        x => String(x[field.valueField]) === String(val)
+                    );
+
+                    if (!found) return false;
+
+                    if (MODEL_NAME === "projectsanctiondistribution") {
+                        params.data[field.name] = String(found[field.valueField]);
+                    } else {
+                        params.data[field.name] = Number(found[field.valueField]);
+                    }
+
+ 
+                    
+
+                    if (MODEL_NAME === "projectsanctiondistribution" && field.name === "project") {
+                        params.data.project_short_no_display = found.project_short_no || "";
+                        params.data.project_no_display = found.project_no || "";
+
+                        params.api.refreshCells({
+                            rowNodes: [params.node],
+                            columns: ["project_short_no_display", "project_no_display"],
+                            force: true
+                        });
+                    }
+
+
+                    trackChange(params.data);
+                    return true;
+                };
+            }          
  
 
             
@@ -1119,6 +1183,32 @@
         fetch(API_URL, { credentials: "same-origin"})
             .then(response => response.json())
             .then(data => {
+
+                if (MODEL_NAME === "projectsanctiondistribution") {
+                    data.forEach(row => {
+                        if (row.project) {
+                            const p = (window.projects || []).find(
+                                x => Number(x.id) === Number(row.project)
+                            );
+
+                            row.project_short_no_display = p ? (p.project_short_no || "") : "";
+                            row.project_no_display = p ? (p.project_no || "") : "";
+                        } else {
+                            row.project_short_no_display = "";
+                            row.project_no_display = "";
+                        }
+                    });
+                }
+
+                if (MODEL_NAME === "projectsanctiondistribution") {
+                    data.forEach(row => {
+                        if (row.project != null) row.project = String(row.project);
+                        if (row.head != null) row.head = String(row.head);
+                    });
+                }
+
+               
+               
                 allData = data;
                 gridApi.setGridOption('rowData', data);
 
@@ -1137,7 +1227,7 @@
     
     // ✅ NEW: Search Function
     function applySearch() {
-        const searchText = HAS_GRANTS ? 
+        const searchText = HAS_GRANTS_SELECTOR ? 
             document.getElementById('searchGrantNo').value.toLowerCase() :
             document.getElementById('searchProjectNo').value.toLowerCase();
         const dateFrom = document.getElementById('searchDateFrom').value;
@@ -1148,7 +1238,7 @@
         // Filter by grant/project number
         if (searchText) {
             filteredData = filteredData.filter(row => {
-                if (HAS_GRANTS) {
+                if (HAS_GRANTS_SELECTOR) {
                     const grantNo = (row.grant_no_display || '').toLowerCase();
                     const shortNo = (row.seed_grant_short || row.tdg_grant_short || '').toLowerCase();
                     return grantNo.includes(searchText) || shortNo.includes(searchText);
@@ -1213,7 +1303,7 @@
             }
         });
         
-        {% if has_grants %}
+        {% if enable_grant_selector %}
         newRow.seed_grant = null;
         newRow.tdg_grant = null;
         newRow.seed_grant_short = null;
@@ -1303,7 +1393,7 @@
         delete payload.name;
         delete payload.dept;
 
-        {% if has_grants %}
+        {% if enable_grant_selector %}
         
 
         
@@ -1313,6 +1403,12 @@
         delete payload.tdg_grant_short;
         delete payload.grant_short;
         {% endif %}
+
+        if (HAS_GRANTS_SELECTOR === true) {
+            payload.seed_grant = row.seed_grant || null;
+            payload.tdg_grant = row.tdg_grant || null;
+            payload.project = row.project || null;
+        }
 
         const NULL_ALLOWED_FIELDS = [
              "extended_end_date",
@@ -1329,6 +1425,21 @@
                 delete payload[key];
             }
         });
+
+        if (payload.is_extended !== true) {
+            delete payload.extended_end_date;
+            delete payload.extension_reason;
+        } else {
+            if (!payload.extended_end_date){
+                delete payload.extended_end_date;
+            }
+        }
+
+        if (MODEL_NAME === "projectsanctiondistribution") {
+            if (payload.project) payload.project = parseInt(payload.project);
+            if (payload.head) payload.head = parseInt(payload.head);
+        }
+
 
         delete payload._isNew;
         
