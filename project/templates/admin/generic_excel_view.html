@@ -354,11 +354,13 @@
 
 
 <script>
+    const IS_SUPERUSER = {{ request.user.is_superuser|lower }};
     const MODEL_NAME = "{{ model_name }}";
     const PRIMARY_KEY = "id";
     window.heads = {{ heads|safe }};
     window.projects = {{ projects|safe }};
     window.faculties = {{ faculties|safe }};
+    window.commitments = {{commitments|default:"[]"|safe}};
     window.copis = {{ copis|default:"[]"|safe}};
     const ADMIN_USERS = {{ admin_users|safe }};
     const API_URL = `/api/${MODEL_NAME}/`;
@@ -383,6 +385,8 @@
     let gridApi;
     let allData = [];
     let modifiedRows = new Map();
+
+    const refreshCols = [];
     
     const columnDefs = buildColumnDefinitions();
     
@@ -528,6 +532,34 @@
 
         return { ok: true };
     }
+    function calculateProjectEndDate(row) {
+        if (!row.project_start_date || !row.duration_months) return;
+
+        
+        const months = parseInt(row.duration_months);
+
+        if (isNaN(months) || months <= 0) return;
+
+        const start = new Date(row.project_start_date);
+        const end = new Date(start);
+
+        const startDay = start.getDate();
+
+        end.setMonth(end.getMonth() + months);
+
+        if (end.getDate() < startDay) {
+            end.setDate(0);
+        }
+        
+
+        end.setDate(end.getDate() -1);
+
+        const yyyy = end.getFullYear();
+        const mm = String(end.getMonth() + 1).padStart(2, '0');
+        const dd = String(end.getDate()).padStart(2, '0');
+
+        row.project_end_date = `${yyyy}-${mm}-${dd}`;
+    }
     
     function buildColumnDefinitions() {
         const cols = [
@@ -647,16 +679,32 @@
                 params.data.tdg_grant_short = null;
                 params.data.project = null;
 
+                if (MODEL_NAME === "payment") {
+                    params.data.funding_type = null;
+                    params.data.funding_id = null;
+                    params.data.pi_name = "";
+                    params.data.pi_email = "";
+                }
+
+
 
                     
                 if (type === 'Seed') {
-                    const g = SEED_GRANTS.find(g => g.short_no === shortNo);
+                    const g = SEED_GRANTS.find(g => String(g.short_no) === String(shortNo));
                     
                     if (!g) return false;
 
                     params.data.seed_grant = g.id;
                     params.data.seed_grant_short = g.short_no;
-                    params.data.grant_no_display = g.grant_no;    
+                    params.data.grant_no_display = g.grant_no;
+                    
+                    
+                    if (MODEL_NAME === "payment") {
+                        params.data.funding_type = "SEED";
+                        params.data.funding_id = g.id;
+                        params.data.pi_name = g.pi_name || "";
+                        params.data.pi_email = g.pi_email || "";
+                    }
 
                             
 
@@ -664,29 +712,65 @@
                         
                 } 
                 else if (type === "TDG") {
-                    const g = TDG_GRANTS.find(x => x.short_no === shortNo);
+                    const g = TDG_GRANTS.find(x => String(x.short_no) === String(shortNo));
                     if (!g) return false;
 
                    params.data.tdg_grant = g.id;
                    params.data.tdg_grant_short = g.short_no;
                    params.data.grant_no_display = g.grant_no;
+
+                   if (MODEL_NAME === "payment") {
+                    params.data.funding_type = "TDG";
+                    params.data.funding_id = g.id;
+                    params.data.pi_name = g.pi_name || "";
+                    params.data.pi_email = g.pi_email || "";
+                   }
+
+
+
+
                 } 
+
+
                 
                 else if (type === "Project") {
-                    const p = window.projects.find(x => x.project_short_no === shortNo);
+                    const p = window.projects.find(x => String(x.project_short_no) === String(shortNo));
                     if (!p) return false;
 
                     params.data.project = p.id;
                     params.data.grant_no_display = p.project_no;
+
+                    if (MODEL_NAME === "payment") {
+                        params.data.funding_type = "PROJECT";
+                        params.data.funding_id = p.id;
+                        params.data.pi_name = p.pi_name || "";
+                        params.data.pi_email = p.pi_email || "";
+                    }
                 }
+
+                // ✅ keep the selected label stored so AG Grid doesn't blank out
+                params.data.grant_short = params.newValue;
+
                 
                 trackChange(params.data);
+
+                if (MODEL_NAME === "payment") {
+                    refreshCols.push("pi_name", "pi_email");
+                }
                 
                 params.api.refreshCells({
                     rowNodes: [params.node],
                     columns: ['grant_no_display'],
                     force: true
                 });
+
+                if (MODEL_NAME === "payment") {
+                    params.api.refreshCells({
+                        rowNodes: [params.node],
+                        columns: ["grant_short", "pi_name", "pi_email"],
+                        force: true
+                    });
+                }
                     
                 return true;
                 }
@@ -760,7 +844,7 @@
                     headerName: field.label,
                     field: "is_extended",
                     width: 120,
-                    editable: true,
+                    editable: params => IS_SUPERUSER,
                     cellEditor: "agSelectCellEditor",
                     cellEditorParams: {
                         values: [true, false]
@@ -773,7 +857,7 @@
                         }
                         params.api.refreshCells({
                             rowNodes: [params.node],
-                            columns: ["extended_end_date"],
+                            columns: ["extended_end_date", "extension_reason"],
                             force:true
                         });
                         trackChange(params.data);
@@ -789,9 +873,9 @@
                     width: field.width || 140,
                     cellEditor: "agDateStringCellEditor",
                     filter: "agDateColumnFilter",
-                    editable: params => params.data.is_extended === true,
+                    editable: params => IS_SUPERUSER && params.data.is_extended === true,
                     cellClassRules: {
-                        "cell-disabled": params => params.data.is_extended !== true
+                        "cell-disabled": params => !IS_SUPERUSER || params.data.is_extended !== true
                     }
                 });
                 return;
@@ -805,11 +889,46 @@
                     cellEditor: "agLargeTextCellEditor",
                     cellEditorPopup: true,
 
-                    editable: params => params.data.is_extended === true,
+                    editable: params => IS_SUPERUSER && params.data.is_extended === true,
                     cellClassRules: {
-                        "cell-disabled": params => params.data.is_extended !== true
+                        "cell-disabled": params => !IS_SUPERUSER || params.data.is_extended !== true
                     }
                 });
+                return;
+            }
+
+            if (field.name === "commitment") {
+
+                cols.push({
+                    headerName: "Commitment Code",
+                    field: "commitment",
+                    width: 180,
+
+                    editable: params => {
+                        const typeId = params.data.payment_type;
+                        const type = window.payment_types.find(x => x.id == typeId);
+
+                        if (!type) return false;
+
+                        const name = type.name.toLowerCase();
+
+                        return name === "manpower" || name === "purchase order";
+                    },
+
+                    cellEditor: "agSelectCellEditor",
+
+                    cellEditorParams: {
+                        values: window.commitments.map(c => String(c.id))
+                    },
+
+                    valueFormatter: params => {
+                        const c = (window.commitments || []).find(x => x.id == params.value);
+                        return c ? c.commitment_code : "";
+                    },
+
+                    valueParser: params => parseInt(params.newValue)
+                });
+
                 return;
             }
 
@@ -832,7 +951,7 @@
                     },
                     valueFormatter: params => {
                         const sec = TDS_SECTIONS.find(s => String(s.id) === String(params.value));
-                        return sec ? sec.code : "";
+                        return sec ? sec.section || sec.code : "";
                     },
                     valueParser: params => parseInt(params.newValue || params.value)
 
@@ -861,6 +980,32 @@
                     valueParser: params => parseInt(params.newValue || params.value)
                 });
                 return;
+            }
+
+            if (field.name === "duration_months") {
+                colDef.valueSetter = params => {
+                    const value = parseInt(params.newValue);
+
+                    if (isNaN(value) || value <=0) {
+                        showCellErrorPopup(params, "Duration must be graeter than 0");
+                        return false;
+                    }
+
+                    removeCellErrorPopup();
+
+                    params.data.duration_months = value;
+
+                    calculateProjectEndDate(params.data);
+
+                    params.api.refreshCells({
+                        rowNodes: [params.node],
+                        columns: ["project_end_date"],
+                        force: true
+                    });
+
+                    trackChange(params.data);
+                    return true;
+                };
             }
             if (field.name === "financial_year") {
                 colDef.cellEditor = "agTextCellEditor"
@@ -1073,6 +1218,16 @@
                    
                     params.data[field.name] = newDate;
 
+                    if (field.name === "project_start_date") {
+                        calculateProjectEndDate(params.data);
+
+                        params.api.refreshCells({
+                            rowNodes: [params.node],
+                            columns: ["project_end_date"],
+                            force: true
+                        });
+                    }
+
                     params.data._date_error = null;
                     removeCellErrorPopup();
                     trackChange(params.data);
@@ -1094,8 +1249,33 @@
                 colDef.cellEditorPopup = true;
             } else if (field.choices && field.choices.length > 0) {
                 colDef.cellEditor = 'agSelectCellEditor';
-                colDef.cellEditorParams = { values: field.choices };
+                colDef.cellEditorParams = { 
+                    values: [""].concat(field.choices.filter(v => v !== ""))
+                };
+
+                colDef.valueFormatter = params => {
+                    return params.value || "";
+
+                };
+
+                colDef.valueSetter = params => {
+                    if (!params.newValue) {
+                        params.data[field.name] = null;
+
+                    }else {
+                        params.data[field.name] = params.newValue;
+                    }
+
+                    trackChange(params.data);
+                    return true;
+                };
             }
+
+
+
+                
+
+            
             
             {% if enable_grant_selector %}
             if (field.name === 'head') {
@@ -1105,6 +1285,24 @@
 
             
             {% endif %}
+
+            if (MODEL_NAME === "payment" && field.name === "payee") {
+                cols.push({
+                    headerName: field.label,
+                    field: "payee",
+                    width: 250,
+                    editable: false,
+                    valueFormatter: params => {
+                        const p = (window.payees || []).find(x=> Number(x.id) === Number(params.value));
+                        return p ? p.name_of_payee : "";
+                    
+                    }
+                });
+                return;
+            }
+
+
+
             if(
                 ENABLE_GENERIC_FK_DROPDOWN &&
                 field.type === 'ForeignKey' &&
@@ -1121,6 +1319,8 @@
                 };
 
                 colDef.valueFormatter = params => {
+                    
+
                     const found = data.find(
                         x => String(x[field.valueField]) === String(params.value)
                     );
@@ -1145,8 +1345,10 @@
 
                     if (MODEL_NAME === "projectsanctiondistribution") {
                         params.data[field.name] = String(found[field.valueField]);
-                    } else {
-                        params.data[field.name] = Number(found[field.valueField]);
+                    }
+                   
+                    else {
+                        params.data[field.name] = String(found[field.valueField]);
                     }
 
  
@@ -1183,6 +1385,15 @@
         fetch(API_URL, { credentials: "same-origin"})
             .then(response => response.json())
             .then(data => {
+                data.forEach(row => {
+                    FIELDS_CONFIG.forEach(f => {
+                        if (f.type === "ForeignKey") {
+                            if (row[f.name] !== null && row[f.name] !== undefined) {
+                                row[f.name] = String(row[f.name]);
+                            }
+                        }
+                    });
+                });
 
                 if (MODEL_NAME === "projectsanctiondistribution") {
                     data.forEach(row => {
@@ -1208,6 +1419,7 @@
                 }
 
                
+
                
                 allData = data;
                 gridApi.setGridOption('rowData', data);
@@ -1442,6 +1654,14 @@
 
 
         delete payload._isNew;
+
+        FIELDS_CONFIG.forEach(f => {
+            if (f.type === "ForeignKey" && payload[f.name] != null && payload[f.name] !== "") {
+                if (!isNaN(payload[f.name])) {
+                    payload[f.name] = parseInt(payload[f.name]);
+                }
+            }
+        });
         
         return payload;
     }
@@ -1495,6 +1715,39 @@
         loadData();
     }
 
+    function calculateGST(row) {
+        const amount = Number(row.amount || 0);
+
+        if (!row.gst_tds_type) {
+            row.cgst_tds = null;
+            row.sgst_tds = null;
+            row.igst_tds = null;
+            return;
+        }
+
+        if (!amount) {
+            row.cgst_tds = null;
+            row.sgst_tds = null;
+            row.igst_tds = null;
+            return;
+        }
+
+        if(row.gst_tds_type === "CGST & SGST") {
+            row.cgst_tds = Math.round(amount * 0.01);
+            row.sgst_tds = Math.round(amount * 0.01);
+            row.igst_tds = null;
+
+        }
+
+        else if (row.gst_tds_type === "IGST") {
+            row.igst_tds = Math.round(amount * 0.02);
+            row.cgst_tds = null;
+            row.sgst_tds = null;
+        }
+
+    }
+    
+
     function calculateTDS(row) {
         const tdsRateObj = TDS_RATES.find(r => Number(r.id) === Number(row.tds_rate));
         if (!tdsRateObj || !row.amount) {
@@ -1505,12 +1758,26 @@
         const percent = Number(tdsRateObj.percent);
         const amount = Number(row.amount);
 
-        row.tds_amount = (amount * percent / 100).toFixed(2);
-        row.net_amount = (amount - row.tds_amount).toFixed(2);
+        row.tds_amount = Math.round(amount * percent / 100);
+        
     }
     
     function trackChange(rowData) {
         calculateTDS(rowData);
+        calculateGST(rowData);
+
+        const tds = Number(rowData.tds_amount || 0);
+        const amount = Number(rowData.amount || 0);
+
+        const totalGST = 
+            Number(rowData.cgst_tds || 0) +
+            Number(rowData.sgst_tds || 0) +
+            Number(rowData.igst_tds || 0);
+
+        
+
+        rowData.net_amount = Math.round(amount - tds - totalGST);
+
         const pkValue = rowData[PRIMARY_KEY];
         if (pkValue) { 
             modifiedRows.set(pkValue, rowData);

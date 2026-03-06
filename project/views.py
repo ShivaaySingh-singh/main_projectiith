@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponseRedirect, JsonResponse
 from django.core.serializers.json import DjangoJSONEncoder
-from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment, ProjectSanctionDistribution,Payee
+from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment, ProjectSanctionDistribution,Payee,ReceiptHead
 from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
 import re
@@ -19,6 +19,10 @@ from .forms import FundRequestForm, AdminRemarkForm
 from collections import defaultdict
 from decimal import Decimal
 from django.http import HttpResponse
+from .forms import ReceiptForm
+
+import json
+from django.core.exceptions import ValidationError
 
 from .serializers import (
     ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer,ProjectSerializer,BillInwardSerializer,PaymentSerializer,ReceiptSerializer,
@@ -446,6 +450,8 @@ class GenericModelAPIView(APIView):
         return Response(serializer.data)
 
     def post(self, request, model_name):
+
+        
         Model, Serializer = self.get_model_and_serializer(model_name)
         if not Model:
             return Response({"error": "Invalid model"}, status=400)
@@ -802,8 +808,7 @@ def project_balance_sheet(request, short_no):
 
     return render(request, "project_balance_sheet.html", context)
 
-        
-        
+
 
 
 

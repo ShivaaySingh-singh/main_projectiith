@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.contenttypes.models import ContentType
-from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project,BillInward,Faculty, Payment, Receipt, TDSSection,TDSRate, ProjectSanctionDistribution, ReceiptHead, Payee
+from .models import Expenditure, Commitment, SeedGrant, TDGGrant, FundRequest, Project,BillInward,Faculty, Payment, Receipt, TDSSection,TDSRate, ProjectSanctionDistribution, ReceiptHead, Payee, ReceiptAllocation
 import re
 
 
@@ -137,9 +137,9 @@ class CommitmentSerializer(FundingRelatedSerializer):
         return ""
 
     class Meta:
-        model = Expenditure
+        model = Commitment
         fields = [
-            "id", "date", "bill_date","head", "particulars", "amount", "remarks",
+            "id","commitment_code", "date", "bill_date","head", "particulars", "gross_amount", "remarks",
             "seed_grant", "tdg_grant", "project",
             "grant_no_display", "seed_grant_short", "tdg_grant_short",
         ]
@@ -382,7 +382,7 @@ class TDGGrantSerializer(serializers.ModelSerializer):
 
 class ProjectSerializer(serializers.ModelSerializer):
 
-    duration = serializers.CharField(read_only=True)
+    duration_display = serializers.CharField(read_only=True)
     class Meta:
         model = Project
         fields = '__all__'
@@ -531,12 +531,12 @@ class FundRequestSerializer(serializers.ModelSerializer):
     
 class BillInwardSerializer(serializers.ModelSerializer):
     id = serializers.CharField(read_only=True) 
-    faculty = serializers.SlugRelatedField(slug_field="faculty_id", queryset=Faculty.objects.all())
+    faculty = serializers.PrimaryKeyRelatedField(queryset=Faculty.objects.all())
     tds_section = serializers.PrimaryKeyRelatedField(queryset=TDSSection.objects.all(), allow_null=True, required=False)
     tds_rate = serializers.PrimaryKeyRelatedField(queryset=TDSRate.objects.all(), allow_null=True, required=False)
     pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
     # Optional: Display fields for better UI (read-only)
-    faculty_id_display = serializers.CharField(source='faculty.faculty_id',  read_only=True, required=False)
+    faculty_id_display = serializers.CharField(source='faculty.faculty_id',  read_only=True)
     
     
     assigned_to_name = serializers.SerializerMethodField(read_only=True)
@@ -592,20 +592,33 @@ class PaymentSerializer(serializers.ModelSerializer):
     grant_no_display = serializers.SerializerMethodField()
     short_no = serializers.SerializerMethodField()
     
+    commitment = serializers.PrimaryKeyRelatedField(queryset=Commitment.objects.all(),
+                                                    allow_null=True, required=False)
+    
+    pi_name = serializers.CharField(read_only=True)
+    pi_email = serializers.EmailField(read_only=True)
+    
+    tds_section = serializers.PrimaryKeyRelatedField(queryset=TDSSection.objects.all(),allow_null=True, required=False)
 
-    
-    pi_name = serializers.CharField(source="faculty.pi_name", read_only=True)
-    tds_section = serializers.IntegerField(source="tds_section.id", read_only=False,allow_null=True)
-    tds_rate = serializers.IntegerField(source="tds_rate.id", read_only=False, allow_null=True)
-    
+    tds_rate = serializers.PrimaryKeyRelatedField(queryset=TDSRate.objects.all(), allow_null=True, required=False)
+
+    seed_grant_short = serializers.CharField(
+        source="seed_grant.short_no", read_only=True, allow_null=True
+    )
+
+    tdg_grant_short = serializers.CharField(source="tdg_grant.short_no", read_only=True, allow_null=True)
 
     class Meta:
         model = Payment
         fields = [
             "id",
+            "commitment",
             "date",
+            "bill_date",
             "head",
             "payment_type",
+            "pi_name",
+            "pi_email",
             "payee",
             "bank",
             "amount",
@@ -619,6 +632,28 @@ class PaymentSerializer(serializers.ModelSerializer):
             "project",
             "grant_no_display",
             "short_no",
+
+            "payee_pan",
+            "payee_bank_name",
+            "payee_branch_name",
+            "payee_account_no",
+            "payee_ifsc",
+            "payee_email",
+            "gst_tds_type",
+            "igst_tds",
+            "cgst_tds",
+            "sgst_tds",
+            "seed_grant_short",
+            "tdg_grant_short",
+
+        ]
+        read_only_fields = [
+            "igst_tds",
+            "cgst_tds",
+            "sgst_tds",
+            "net_amount",
+            "pi_name",
+            "pi_email",
         ]
 
     def get_grant_no_display(self, obj):
@@ -639,36 +674,41 @@ class PaymentSerializer(serializers.ModelSerializer):
             return obj.project.project_short_no
         return ""      
 
+class ReceiptAllocationSerializer(serializers.ModelSerializer):
+
+    head_name = serializers.CharField(source="head.name", read_only=True)
+
+    class Meta: 
+        model = ReceiptAllocation
+        fields = [
+            "id",
+            "head",
+            "head_name",
+            "amount",
+        ]
+
+
 class ReceiptSerializer(serializers.ModelSerializer):
-    seed_grant = serializers.PrimaryKeyRelatedField(queryset=SeedGrant.objects.all(), allow_null=True, required=False)
 
-    tdg_grant = serializers.PrimaryKeyRelatedField(queryset=TDGGrant.objects.all(), allow_null=True, required=False)
+    allocations = ReceiptAllocationSerializer(
+        many=True,
+        read_only=True
+    )
 
-    project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), allow_null=True, required= False)
-    
-    grant_no_display = serializers.SerializerMethodField()
-    short_no = serializers.SerializerMethodField()
     class Meta:
         model = Receipt
-        fields = 'id',"date", 'receipt_date', 'head','amount', 'seed_grant', 'tdg_grant', 'project','grant_no_display', 'short_no',
-
-    def get_grant_no_display(self, obj):
-            if obj.seed_grant:
-                return obj.seed_grant.grant_no
-            if obj.tdg_grant:
-                return obj.tdg_grant.grant_no
-            if obj.project:
-                return obj.project.project_no
-            return ""
-
-    def get_short_no(self, obj):
-        if obj.seed_grant: 
-            return obj.seed_grant.short_no
-        if obj.tdg_grant:
-            return obj.tdg_grant.short_no
-        if obj.project:
-            return obj.project.project_short_no
-        return ""
+        fields = [
+            "id",
+            "receipt_date",
+            "financial_year",
+            "category",
+            "short_no",
+            "reference_number",
+            "invoice_no",
+            "total_amount",
+            "remarks",
+            "allocations",
+        ]
         
 
 

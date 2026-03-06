@@ -10,6 +10,11 @@ import re
 from django.core.validators import RegexValidator
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from decimal import Decimal, ROUND_HALF_UP
+from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta
+import random
+from django.db.models import Sum
 
 
 fy_validator = RegexValidator(
@@ -121,6 +126,8 @@ class Project(models.Model):
         verbose_name="Project Start Date",
         
     )
+
+    duration_months = models.PositiveIntegerField(verbose_name="Duration (in months)")
     project_end_date = models.DateField(
         verbose_name="Project End Date",
         
@@ -239,36 +246,24 @@ class Project(models.Model):
     
     @property
 
-    def duration(self):
-        start = self.project_start_date
-        end = self.final_end_date
-
-        if not start or not end:
-            return None
-        
-        if end < start:
-            return None
-        
-        months = (end.year - start.year) * 12 + (end.month - start.month)
-
-        if end.day < start.day:
-            months -= 1 
+    def duration_display(self):
+        months = self.duration_months or 0
 
         years = months // 12
-        rem_months = months % 12
 
-        result = []
+        remaining_months = months % 12
 
-        if years > 0:
-            result.append(f"{years} year" if years == 1 else f"{years} years")
+        parts = []
+        if years:
+            parts.append(f"{years} year" if years == 1 else f"{years} years")
 
-        if rem_months > 0:
-            result.append(f"{rem_months} month" if rem_months == 1 else f"{rem_months} months")
-
-        if not result:
-            return "0 months"
-
-        return " ".join(result)  
+        if remaining_months:
+            parts.append(
+                f"{remaining_months} month"
+                if remaining_months == 1
+                else f"{remaining_months} months"
+            )  
+        return " ".join(parts) if parts else "0 months"
 
 
 
@@ -293,6 +288,18 @@ class Project(models.Model):
                     field_name: 'Only positive amounts are allowed. Negative values are not permitted.'
                 })
             
+        if self.duration_months is None or self.duration_months <= 0:
+            raise ValidationError({
+                "duration_months": "Duration must be greater than zero."
+            }) 
+        
+        calculated_end_date = None
+        if self.project_start_date and self.duration_months:
+            calculated_end_date = (
+                self.project_start_date + relativedelta(months=self.duration_months)
+
+            ) - timedelta(days=1)
+            
         if self.is_extended:
             if not self.extended_end_date:
                 raise ValidationError({"extended_end_date": "Extended end date is required if project is extended"})
@@ -312,6 +319,11 @@ class Project(models.Model):
                 self.pi_name = self.faculty.pi_name
             if not self.dept:
                 self.dept = self.faculty.department
+
+        if self.project_start_date and self.duration_months:
+            self.project_end_date = (
+                self.project_start_date + relativedelta(months=self.duration_months)
+            ) - timedelta(days=1)
         # Run full validation before saving
         self.full_clean()
         
@@ -390,6 +402,10 @@ class CustomUser(AbstractUser):
                 self.is_superuser = False
         
         super().save(*args, **kwargs)
+
+    @property
+    def display_name(self):
+        return self.get_full_name() or self.username
 
     class Meta:
         verbose_name = "user"
@@ -598,7 +614,7 @@ class BillInward(models.Model):
         on_delete=models.PROTECT,  # Prevents deleting faculty if bills exist
         related_name='inward_bills',
         verbose_name="Faculty",
-        to_field='faculty_id',  
+         
     )
 
     pi_name = models.CharField(
@@ -654,6 +670,8 @@ class BillInward(models.Model):
     def faculty_id_display(self):
         """Access faculty ID through FK"""
         return self.faculty.faculty_id if self.faculty else ""
+    
+      
 
 class Expenditure(models.Model):
     id = models.AutoField(primary_key=True)
@@ -749,6 +767,7 @@ class Expenditure(models.Model):
 # ✅ Commitment
 class Commitment(models.Model):
     id = models.AutoField(primary_key=True)
+    commitment_code = models.CharField(max_length=5, unique=True, editable=False)
     date = models.DateField()
     bill_date =models.DateField(blank=True, null=True)
     
@@ -782,7 +801,18 @@ class Commitment(models.Model):
     head = models.CharField(max_length=100)
     particulars = models.TextField()
     gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    status = models.CharField(max_length=10, choices=[("OPEN", "Open"),
+                                                      ("CLOSED", "Closed"),
+                                                      ],
+                                                      default="OPEN"
+                                                      )
     remarks = models.TextField(blank=True, null=True)
+
+    def generate_commitment_code(self):
+        while True:
+            code = str(random.randint(10000, 99999))
+            if not Commitment.objects.filter(commitment_code=code).exists():
+                return code
 
     def clean(self):
         funding = self.seed_grant or self.tdg_grant or self.project
@@ -805,9 +835,24 @@ class Commitment(models.Model):
         
     def save(self, *args, **kwargs):
         self.full_clean()
+        
+
+        if not self.commitment_code:
+            self.commitment_code = self.generate_commitment_code()
+
+
+        
         super().save(*args, **kwargs)
 
+    @property
+    def total_paid(self):
+        return self.payments.aggregate(
+            total=Sum("amount")
+        ) ["total"] or Decimal("0")
     
+    @property
+    def remaining_amount(self):
+        return self.gross_amount - self.total_paid
 
     @property
     def grant_no(self):
@@ -827,7 +872,8 @@ class Commitment(models.Model):
 
     def __str__(self):
         code = self.short_no or "—"
-        return f"{code} | {self.head} | {self.gross_amount}"
+        return f"{self.commitment_code}"
+    
     
     class Meta:
         verbose_name = "Commitment"
@@ -899,65 +945,45 @@ class FundRequest(models.Model):
             raise ValidationError("please select exactly one project/grant type.")
         
 
-class Receipt(models.Model):
-    
-    receipt_date = models.DateField(blank=True, null=True)
-    
-    seed_grant = models.ForeignKey(SeedGrant, on_delete=models.CASCADE, null=True, blank=True, related_name='receipts')
+class ReceiptCategory(models.Model):
+    name = models.CharField(max_length=100, unique= True)
 
-    tdg_grant = models.ForeignKey(TDGGrant, on_delete=models.CASCADE, null=True, blank=True, related_name='receipts_tdg')
-
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="receipts")
-
-    date = models.DateField(blank=True, null=True)                     
-    
-    category = models.CharField(max_length=100, blank=True, null=True)           
-    reference_number = models.CharField(max_length=100, blank=True, null=True)   
-    
-    # sanction heads (fixed)
-    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    head = models.ForeignKey(ReceiptHead,on_delete=models.PROTECT,null=True, blank=True, related_name="receipts")
-
-    def clean(self):
-        funding = self.seed_grant or self.tdg_grant or self.project
-
-        if not funding:
-            raise ValidationError("Select exactly one funding source.")
-
-        if sum(bool(x) for x in [self.seed_grant, self.tdg_grant, self.project]) != 1:
-            raise ValidationError("Select only one funding source.")
-
-        if self.receipt_date:
-            effective_end = funding.get_effective_end_date()
-
-            if self.receipt_date > effective_end:
-                raise ValidationError(
-                    f"Funding expired on {effective_end}. Receipt date not allowed."
-            )
-
-        if getattr(funding, "project_status", None) in ["CLOSED", "EXPIRED"]:
-            raise ValidationError("Funding source is not active.")
-
-        
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        super().save(*args, **kwargs)
-    
-    def __str__(self):
-        if self.project:
-            code = self.project.project_no
-        elif self.seed_grant:
-            code = self.seed_grant.grant_no
-        else:
-            code = "-"
-        return f"{code} | {self.amount}"
-    
     class Meta:
-        verbose_name = "Receipt"
-        verbose_name_plural = "Receipts"
-        ordering = ["receipt_date"]
+        ordering = ["name"]
 
+    def __str__(self):
+        return self.name
+    
+class Receipt(models.Model):
+    receipt_date = models.DateField(blank=True, null=True)
+
+    financial_year = models.CharField(max_length=7, blank=True, null=True)
+
+    category = models.ForeignKey(ReceiptCategory, on_delete=models.PROTECT, null=True, blank=True)
+
+    short_no = models.CharField(max_length=100, blank=True, null=True)
+
+    reference_number = models.CharField(max_length=200, blank=True, null=True)
+
+    invoice_no = models.CharField(max_length=100,blank=True,null=True)
+
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2,blank=True, null=True)
+
+    remarks = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.short_no} | {self.total_amount}"
+    
+class ReceiptAllocation(models.Model):
+
+    receipt = models.ForeignKey(Receipt, related_name="allocations", on_delete=models.CASCADE)
+
+    head = models.ForeignKey(ReceiptHead, on_delete=models.PROTECT)
+
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.receipt.short_no} | {self.head.anme}"
 
     
 
@@ -1089,9 +1115,8 @@ class Bank(models.Model):
         return f"{self.bank_name} ({self.short_no})"
     
 GST_TDS_CHOICES = [
-    ("CGST", "CGST @ 2%"),
-    ("SGST", "SGST @ 2%"),
-    ("IGST", "IGST @ 2%"),
+    ("CGST & SGST", "CGST 1% + SGST 1%"),
+    ("IGST", "IGST 2%"),
 
 ]
 PAYMENT_STATUS_CHOICES = [
@@ -1099,7 +1124,17 @@ PAYMENT_STATUS_CHOICES = [
     ("PAID", "Paid"),
 ]
 
+FUNDING_TYPE_CHOICES = [
+    ("PROJECT", "Project"),
+    ("SEED", "Seed Grant"),
+    ("TDG", "TDG Grant"),
+]
+
 class Payment(models.Model):
+
+    funding_type = models.CharField(max_length=20, choices=FUNDING_TYPE_CHOICES, null=True, blank=True)
+
+    funding_id = models.PositiveIntegerField(null=True, blank=True)
     
     seed_grant = models.ForeignKey(SeedGrant, on_delete=models.CASCADE, null=True, blank=True, related_name="payments")
 
@@ -1109,12 +1144,15 @@ class Payment(models.Model):
     
     
     date = models.DateField()
+
+    bill_date = models.DateField(blank=True, null=True)
     
     
     head = models.ForeignKey(ReceiptHead, on_delete=models.PROTECT, related_name="payments")
 
     # Payee Info
     payment_type = models.ForeignKey(PaymentType, on_delete=models.PROTECT,related_name="payments")
+    commitment = models.ForeignKey(Commitment, on_delete=models.PROTECT, null=True, blank=True, related_name="payments")
     payee = models.ForeignKey(Payee, on_delete=models.PROTECT,null =True, blank =True ,related_name="payments")
 
     bank = models.ForeignKey(Bank, on_delete=models.PROTECT,null=True,blank=True, related_name="payments")
@@ -1158,13 +1196,13 @@ class Payment(models.Model):
     tds_amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
 
     # GST-TDS
-    gst_tds_type = models.CharField(max_length=20, choices=GST_TDS_CHOICES, blank=True, null=True)
-    igst_tds = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    cgst_tds = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    sgst_tds = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+    gst_tds_type = models.CharField(max_length=20, choices=GST_TDS_CHOICES, blank=True, null=True, default=None)
+    igst_tds = models.DecimalField(max_digits=12, decimal_places=0, blank=True, null=True)
+    cgst_tds = models.DecimalField(max_digits=12, decimal_places=0, blank=True, null=True)
+    sgst_tds = models.DecimalField(max_digits=12, decimal_places=0, blank=True, null=True)
 
     # Final Calculated Amounts (Filled from AG Grid)
-    net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    net_amount = models.DecimalField(max_digits=12, decimal_places=0, default=0)
 
     purpose = models.TextField(blank=True, null=True)
 
@@ -1185,11 +1223,73 @@ class Payment(models.Model):
         help_text="Auto-filled when paymentemail is sent"
     )
 
+
+    @property
+    def funding_obj(self):
+        if not self.funding_type or not self.funding_id:
+            return None
+        
+        if self.funding_type == "PROJECT":
+            return Project.objects.select_related("faculty").filter(id=self.funding_id).first()
+        
+        if self.funding_type == "SEED":
+            return SeedGrant.objects.select_related("faculty").filter(id=self.funding_id).first()
+        
+        if self.funding_type == "TDG":
+            return TDGGrant.objects.select_related("faculty").filter(id=self.funding_id).first()
+        
+        return None
+    
+    def calculate_taxes(self):
+        gst_half = Decimal("0.01")
+        gst_full = Decimal("0.02")
+
+        self.igst_tds = Decimal("0")
+        self.cgst_tds = Decimal("0")
+        self.sgst_tds = Decimal("0")
+
+        if not self.amount:
+            self.net_amount = Decimal("0")
+            return
+        
+        if self.tds_rate:
+            percent = Decimal(self.tds_rate.percent) / Decimal("100")
+            self.tds_amount = (self.amount * percent).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+
+            )
+        else:
+            self.tds_amount = Decimal("0")
+        
+        if self.gst_tds_type == "CGST & SGST":
+            self.cgst_tds = (self.amount * gst_half).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+            self.sgst_tds = (self.amount * gst_half).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+
+        elif self.gst_tds_type == "IGST":
+            self.igst_tds = (self.amount * gst_full).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+
+        total_gst = (
+            (self.igst_tds or Decimal("0")) +
+            (self.cgst_tds or Decimal("0")) + 
+            (self.sgst_tds or Decimal("0"))
+        )
+
+        
+
+        self.net_amount = (
+            self.amount - self.tds_amount - total_gst
+        ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     
     def clean(self):
         errors = {}
 
-        funding = self.seed_grant or self.tdg_grant or self.project
+        funding = self.funding_obj or self.seed_grant or self.tdg_grant or self.project
 
         if not funding:
             errors["__all__"] = "Select exactly one funding source."
@@ -1197,15 +1297,14 @@ class Payment(models.Model):
         if sum(bool(x) for x in [self.seed_grant, self.tdg_grant, self.project]) != 1:
             errors["__all__"] = "Only one funding source is allowed."
 
-        if self.date:
+        if self.bill_date:
             effective_end = funding.get_effective_end_date()
-            if self.date > effective_end:
-                errors["date"] = (
+            if self.bill_date > effective_end:
+                errors["bill_date"] = (
                     f"Funding expired on {effective_end}. Payment date not allowed."
                 )
 
-        if getattr(funding, "project_status", None) in ["CLOSED", "EXPIRED"]:
-            errors["__all__"] = "Funding source is not active."
+        
 
         if not self.payee:
             errors["payee"] = "Payee is mandatory."
@@ -1213,22 +1312,69 @@ class Payment(models.Model):
         if not self.bank:
             errors["bank"] = "Bank is mandatory."
 
+        if self.payment_type:
+            type_name = self.payment_type.name.lower()
+
+            if type_name in ["manpower", "purchase order"]:
+                if not self.commitment:
+                    errors["commitment"] = "Commitmnet code is mandatory for this payment type."
+
+                
+        if self.commitment:
+            if self.commitment.status == "CLOSED":
+                errors["commitment"] = "This commitment is closed."
+
+            previous_amount = Decimal("0")
+
+            if self.pk:
+                old = Payment.objects.filter(pk=self.pk).first()
+                if old:
+                    previous_amount = old.amount
+
+            allowed_remaining = self.commitment.remaining_amount + previous_amount
+
+            if self.amount > allowed_remaining:
+                errors["amount"] = (
+                    f"Only {allowed_remaining} remaining in this commitment."
+
+                )                
+
         if errors:
             raise ValidationError(errors)
     
 
 
     def save(self, *args, **kwargs):
-        funding = self.seed_grant or self.tdg_grant or self.project
+        funding = self.funding_obj
 
         if funding:
+            self.project = None
+            self.seed_grant = None
+            self.tdg_grant = None
+
+            if self.funding_type == "PROJECT":
+                self.project = funding
+            elif self.funding_type == "SEED":
+                self.seed_grant = funding
+
+            elif self.funding_type == "TDG":
+                self.tdg_grant = funding
+
+            faculty = getattr(funding,"faculty", None)
             self.pi_name = getattr(funding, "pi_name", None)
-            faculty = getattr(funding, "faculty", None)
-            self.pi_email = faculty.email if faculty and faculty.email else None
+            self.pi_email = faculty.email if faculty else None
+
+        else:
+            funding = self.seed_grant or self.tdg_grant or self.project
+            if funding:
+                faculty = getattr(funding, "faculty", None)
+                self.pi_name = getattr(funding, "pi_name", None)
+                self.pi_email = faculty.email if faculty else None 
 
         if self.payee:
             self.payee_email = self.payee.email
-
+            
+        self.calculate_taxes()
         self.full_clean()
         super().save(*args, **kwargs)
 

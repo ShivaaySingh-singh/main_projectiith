@@ -1,0 +1,13 @@
+<form method="post">
+    {% csrf_token %}
+
+    {{ form.as_p }}
+
+    <h3>Head Allocation</h3>
+
+    <!-- AG Grid will render here -->
+
+    <input type="hidden" name="allocations" id="allocations_input">
+
+    <button type="submit">Save</button>
+</form>

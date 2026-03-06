@@ -2,7 +2,7 @@ from django import forms
 from .models import FundRequest, Project, SeedGrant, TDGGrant
 
 from django import forms
-from .models import FundRequest, Project, SeedGrant, TDGGrant
+from .models import FundRequest, Project, SeedGrant, TDGGrant, Receipt
 
 class FundRequestForm(forms.ModelForm):
     PROJECT_TYPE_CHOICES = [
@@ -60,3 +60,42 @@ class AdminRemarkForm(forms.ModelForm):
         labels = {
             'remarks_by_src': 'Remarks by SRC',
         }
+
+
+class ReceiptForm(forms.ModelForm):
+
+    class Meta:
+        model = Receipt
+        fields = [
+            "receipt_date",
+            "financial_year",
+            "category",
+            "short_no",
+            "reference_number",
+            "invoice_no",
+            "total_amount",
+            "remarks",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        project_choices = [
+            (p.project_short_no, f"{p.project_short_no} (Project)")
+            for p in Project.objects.all()
+        ]
+
+        seed_choices = [
+            (s.short_no, f"{s.short_no} (Seed)")
+            for s in SeedGrant.objects.all()
+        ]
+
+        tdg_choices = [
+            (t.short_no, f"{t.short_no} (TDG)")
+            for t in TDGGrant.objects.all()
+         
+        ]
+
+        self.fields["short_no"].choices = (
+            project_choices + seed_choices + tdg_choices
+        )
