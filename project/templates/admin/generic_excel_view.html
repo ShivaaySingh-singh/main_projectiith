@@ -360,7 +360,7 @@
     window.heads = {{ heads|safe }};
     window.projects = {{ projects|safe }};
     window.faculties = {{ faculties|safe }};
-    window.commitments = {{commitments|default:"[]"|safe}};
+    window.commitments = {{ commitments|default_if_none:"[]"|safe }};
     window.copis = {{ copis|default:"[]"|safe}};
     const ADMIN_USERS = {{ admin_users|safe }};
     const API_URL = `/api/${MODEL_NAME}/`;
@@ -405,6 +405,9 @@
         stopEditingWhenCellsLoseFocus: true,
         onCellValueChanged: (e) => {
             trackChange(e.data);
+        },
+        onCellFocused: () => {
+            removeCellErrorPopup();
         },
         onSelectionChanged: updateStats,
         pagination: true,
@@ -602,6 +605,9 @@
                 pinned: 'right'
             });
         }
+
+      
+
         
 
              
@@ -932,6 +938,51 @@
                 return;
             }
 
+           if (field.name === "gross_amount") {
+
+    
+    if (field.type === 'DecimalField' || field.type === 'FloatField') {
+
+        
+        colDef.valueFormatter = params => {
+            if (params.value == null) return '';
+            return '₹' + parseFloat(params.value).toLocaleString('en-IN', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        };
+
+        colDef.cellStyle = {
+            textAlign: 'right',
+            fontWeight: 'bold',
+            color: '#d9534f'
+        };
+    }
+
+    cols.push(colDef); // ✅ original push
+
+    // ✅ THEN add remaining
+    if (MODEL_NAME === "commitment") {
+        cols.push({
+            headerName: "Remaining Amount",
+            field: "remaining_amount",
+            width: 180,
+            editable: false,
+            valueFormatter: params => {
+                if (params.value == null) return "";
+                return "₹" + Number(params.value).toLocaleString("en-IN");
+            },
+            cellStyle: {
+                textAlign: 'right',
+                fontWeight: 'bold',
+                color: '#28a745'
+            }
+        });
+    }
+
+    return; // stop default push
+}
+
 
             if (MODEL_NAME !== "projectsanctiondistribution") {
                 if (field.name === 'PRIMARY_KEY' || field.name === 'seed_grant' || field.name === 'tdg_grant' || field.name === 'project' ) {
@@ -1178,7 +1229,14 @@
                 colDef.filter = 'agDateColumnFilter';
 
                 colDef.cellClassRules = {
-                    "cell-error": params => !!params.data._date_error
+                    "cell-error": params => !!params.data._date_invalid
+                };
+
+                colDef.tooltipValueGetter = params => {
+                    if (params.data._date_invalid) {
+                        return "Bill date exceeds funding end date";
+                    }
+                    return null;
                 };
                 
                 
@@ -1201,9 +1259,14 @@
                         const result = validateDateForRow(params.data, newDate);
                 
                         if (!result.ok) {
-                            params.data._date_error = result.message;
+
+                            params.data._date_invalid = true;
+                            params.data._date_warning = result.message;
 
                             showCellErrorPopup(params, result.message);
+
+                            params.data[field.name] = newDate;
+                            trackChange(params.data);
 
                             params.api.refreshCells({
                                 rowNodes: [params.node],
@@ -1211,7 +1274,8 @@
                                 force: true
                             });
 
-                            return false;
+                            
+                            return true;
                         }
                     }
 
@@ -1235,6 +1299,59 @@
                 };
 
             } else if (field.type === 'DecimalField' || field.type === 'FloatField') {
+
+                if (MODEL_NAME === "payment" && field.name === "amount") {
+
+                    colDef.valueSetter = params => {
+                        const value = Number(params.newValue);
+
+                        if (isNaN(value)) return false;
+
+                        const commitmentId = params.data.commitment?.id || params.data.commitment;
+
+                        if (!commitmentId) {
+                            params.data.amount = value;
+                            trackChange(params.data);
+                            return true;
+                        }
+
+                        
+
+                        const commitment = (window.commitments || []).find(
+                            c => Number(c.id) === Number(commitmentId)
+                        );
+
+                        if (!commitment) return true;
+
+                        const remaining = Number(commitment.remaining_amount || 0);
+
+                        if (value > remaining) {
+                            params.data.amount_error = `Only ₹${remaining} remaining`;
+
+                            showCellErrorPopup(params, params.data.amount_error);
+
+                            params.data.amount = value;
+                            trackChange(params.data);
+
+                            return true;
+                        }
+
+                        params.data.amount_error = null;
+                        removeCellErrorPopup();
+
+                        params.data.amount = value;
+                        trackChange(params.data);
+                        return true;
+                    };
+
+                    colDef.cellClassRules = {
+                        "cell-error": params => !!params.data.amount_error
+                    };
+
+                    colDef.tooltipValueGetter = params=> params.data.amount_error || null;
+
+
+                }
                 colDef.valueFormatter = params => {
                     if (params.value == null) return '';
                     return '₹' + parseFloat(params.value).toLocaleString('en-IN', {
@@ -1365,6 +1482,7 @@
                         });
                     }
 
+                    
 
                     trackChange(params.data);
                     return true;
@@ -1557,7 +1675,13 @@
                 
                 if (!createResponse.ok) {
                     const errorData = await createResponse.json();
-                    throw new Error(`Create failed: ${JSON.stringify(errorData)}`);
+                    
+                    handleBackendErrors(row, errorData);
+
+                    updateStatus("Fix error in highlighted cell", "error");
+
+                    showLoading(false);
+                    return;
                 }
                 row._isNew = false;
             }
@@ -1577,11 +1701,27 @@
                 
                 if (!updateResponse.ok) {
                     const errorData = await updateResponse.json();
-                    throw new Error(`Update failed: ${JSON.stringify(errorData)}`);
+                    
+                    handleBackendErrors(row, errorData);
+
+                    updateStatus("Fix error in highlighted cell", "error");
+
+                    showLoading(false);
+                    return;
+
                 }
             }
             
             modifiedRows.clear();
+
+            gridApi.forEachNode(node => {
+                delete node.data._date_warning;
+            });
+
+            removeCellErrorPopup();
+
+            gridApi.refreshCells({ force: true });
+
             updateStatus(` Saved ${newRows.length + updatedRows.length} row(s)`, 'success');
             setTimeout(() => loadData(), 1000);
             
@@ -1591,6 +1731,32 @@
         } finally {
             showLoading(false);
         }
+    }
+
+    function handleBackendErrors(row, errors) {
+        gridApi.forEachNode(node => {
+            if (node.data === row) {
+                
+                if (errors.amount) {
+                    node.data.amount_error = errors.amount[0];
+
+                    showCellErrorPopup({
+                        api: gridApi,
+                        node: node,
+                        column: gridApi.getColumn("amount")
+                    }, errors.amount[0]);
+                }
+
+                if (errors.commitment) {
+                    node.data.commitment_error = errors.commitment[0];
+                }
+
+                gridApi.refreshCells({
+                    rowNodes: [node],
+                    force: true
+                });
+            }
+        });
     }
     
     function preparePayload(row) {
@@ -1824,7 +1990,7 @@
         }
 
         else if (MODEL_NAME === "commitment") {
-            const total = dataList.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+            const total = dataList.reduce((sum, r) => sum + Number(r.gross_amount || 0), 0);
             box.innerHTML = `
                 <span>Total Commitment Amount: <strong>₹${total.toFixed(2)}</strong></span>
             `;

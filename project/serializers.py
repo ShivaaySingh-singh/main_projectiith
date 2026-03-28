@@ -127,6 +127,8 @@ class CommitmentSerializer(FundingRelatedSerializer):
     seed_grant_short = serializers.CharField(source="seed_grant.short_no", read_only=True, allow_null=True)
     tdg_grant_short = serializers.CharField(source="tdg_grant.short_no", read_only=True, allow_null=True)
 
+    remaining_amount = serializers.SerializerMethodField()
+
     def get_grant_no_display(self, obj):
         if obj.seed_grant:
             return obj.seed_grant.grant_no
@@ -135,13 +137,18 @@ class CommitmentSerializer(FundingRelatedSerializer):
         if obj.project:
             return obj.project.project_no
         return ""
-
+    
+    def get_remaining_amount(self, obj):
+        return float(obj.remaining_amount or 0)
+    
     class Meta:
         model = Commitment
         fields = [
             "id","commitment_code", "date", "bill_date","head", "particulars", "gross_amount", "remarks",
             "seed_grant", "tdg_grant", "project",
             "grant_no_display", "seed_grant_short", "tdg_grant_short",
+
+            "remaining_amount",
         ]
     
 
@@ -672,7 +679,17 @@ class PaymentSerializer(serializers.ModelSerializer):
             return obj.tdg_grant.short_no
         if obj.project:
             return obj.project.project_short_no
-        return ""      
+        return "" 
+
+    def validate(self, data):
+        instance = Payment(**data)
+
+        if self.instance:
+            instance.pk = self.instance.pk
+
+        instance.clean()
+
+        return data     
 
 class ReceiptAllocationSerializer(serializers.ModelSerializer):
 

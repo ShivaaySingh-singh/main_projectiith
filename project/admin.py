@@ -17,17 +17,23 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from .services import create_receipt_with_allocations
 from django.core.serializers.json import DjangoJSONEncoder
-
+from django.db.models import Sum, F, Value
+from django.db.models.functions import Coalesce
+from django.db.models import DecimalField
+from django.db.models import ExpressionWrapper
+from .forms import ReceiptForm
 import json  #  ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant, ReceiptAllocation, ReceiptCategory,
-    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName
+    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName, AuditLog
 )
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
     TDGGrantResource, ExpenditureResource, CommitmentResource, PaymentResource
 )
+
+from .serializers import CommitmentSerializer
 
 from .payee_resources import PayeeResource
 from .utils import send_async, generate_random_password, send_credentials_email
@@ -115,7 +121,7 @@ class ExcelViewMixin:
         context_data['primary_key_field'] = self.get_primary_key_field()
         json_keys = [
             'seed_grants', 'tdg_grants',
-            'admin_users', 'tds_sections', 'tds_rates',
+            'admin_users', 'tds_sections', 'tds_rates','commitments',
             'heads', 'status_choices', 'faculties', 'projects','payees', 'banks','payment_types']
         for k in json_keys:
             if k in context_data:
@@ -260,6 +266,7 @@ class CustomAdminSite(admin.AdminSite):
             'Inward' : ['BillInward'],
             'TDS' :['TDSSection', 'TDSRate'],
             'Supporting Data': ['ReceiptHead', 'Bank', 'PaymentType','CoPiName', 'ReceiptCategory',],
+            'Logs': ['AuditLog'],
            
         }
 
@@ -658,20 +665,26 @@ class ReceiptAllocationInline(admin.TabularInline):
 
 class ReceiptAdmin(admin.ModelAdmin):
 
-    form = ReceiptAdminForm
+    form = ReceiptForm
+
+    exclude = ("project", "seed_grant", "tdg_grant")
 
     list_display = (
         "receipt_date",
-        "short_no",
+        "display_short_no",
+        
         "financial_year",
         "category",
         "total_amount",
         "reference_number",
+        "allocation_heads"
 
     )
 
     search_fields = (
-        "short_no",
+        "project__project_short_no",
+        "seed_grant__short_no",
+        "tdg_grant__short_no",
         "reference_number",
         "invoice_no",
     )
@@ -686,23 +699,57 @@ class ReceiptAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return request.user.is_staff
     
+    def display_short_no(self, obj):
+        return obj.short_no or "-"
+    
+    display_short_no.short_description = "Short No."
+
+    #def allocation_heads(self, obj):
+       # return ", ".join(
+         #   f"{alloc.head.name} ({alloc.amount})"
+          #  for alloc in obj.allocations.all()
+        #) or "-"
+    
+   # allocation_heads.short_description = "Allocations"###
+
+    def allocation_heads(self, obj):
+        rows = ""
+
+        for alloc in obj.allocations.all():
+            rows += f"""
+            <tr>
+                <td style="padding:2px 8px;">{alloc.head.name}</td>
+                <td style="padding:2px 8px; text-align:right;"> {alloc.amount}</td>
+            </tr>
+            """
+
+        if not rows:
+            return "-"
+        
+        return format_html(f"""
+            <table style="border-collapse:collapse;">
+                {rows}
+            </table>
+        """)
+    
+    allocation_heads.short_desciption = "Allocations"
+
+
+
     def save_related(self, request, form, formsets, change):
-        allocations_data = []
+        super().save_related(request, form, formsets, change)
 
-        for formset in formsets:
-            for f in formset.forms:
-                if f.cleaned_data and not f.cleaned_data.get("DELETE", False):
-                    allocations_data.append({
-                        "head": f.cleaned_data["head"].id,
-                        "amount": f.cleaned_data["amount"]
-                    })
+        total_alloc = sum(
+            f.cleaned_data["amount"]
+            for formset in formsets
+            for f in formset.forms
+            if f.cleaned_data and not f.cleaned_data.get("DELETE", False)
+        )
 
-        try:
-
-            create_receipt_with_allocations(form, allocations_data)
-
-        except ValidationError as e:
-            raise ValidationError(e)
+        if form.instance.total_amount and total_alloc > form.instance.total_amount:
+            raise ValidationError(
+                "Allocation exceeds total receipt amount"
+        )
 
 
 
@@ -865,6 +912,14 @@ class ExpenditureAdmin(ExcelViewMixin, ImportExportModelAdmin):
 
             'heads': HEADS,  # Convert list to JSON string
         }
+    
+    def save_model(self, request, obj, form, change):
+        obj._current_user = request.user
+        super().save_model(request, obj, form, change)
+
+    def delete_model(self, request, obj):
+        obj._current_user = request.user
+        super().delete_model(request, obj)
 
 
 class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
@@ -885,7 +940,23 @@ class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
     excel_exclude_fields = ['id', 'short_no', 'seed_grant', 'tdg_grant', 'seed_grant_short', 'tdg_grant_short', 'grant_no_display' ]
     
     def get_excel_context_data(self):
+
+        
+            
+        
         return {
+
+            'commitments': CommitmentSerializer(
+                Commitment.objects.all(),
+                many=True
+
+            ).data,
+            
+
+        
+            
+            
+
             'seed_grants': list(SeedGrant.objects.values('id','short_no', 'grant_no', 'pi_name', 'end_date', 'extended_end_date', 'project_status')
                                 .annotate(
                                     end_date_str = models.functions.Cast('end_date', models.CharField()),
@@ -919,7 +990,15 @@ class CommitmentAdmin(ExcelViewMixin, ImportExportModelAdmin):
                 )
             ),
             'heads': json.dumps(HEADS),
+            
         }
+    def save_model(self, request, obj, form, change):
+        obj._current_user = request.user
+        super().save_model(request, obj, form, change)
+
+    def delete_model(self, request, obj):
+        obj._current_user = request.user
+        super().delete_model(request, obj)
 
 class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
     list_display = ['date','pi_name','get_faculty_id','project_no','amount','tds_section','tds_rate','tds_amount','net_amount','under_head','get_assigned_to','status_badge','outward_date','bill_pdf_link']
@@ -1319,7 +1398,7 @@ class BillInwardAdmin(ExcelViewMixin,admin.ModelAdmin):
 class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
     resource_class = PaymentResource
 
-    list_display = ("date","bill_date","head","payment_type","payee","utr_no","net_amount","project")
+    list_display = ("date","bill_date","head","payment_type","payee","utr_no","amount","get_short_no")
 
     list_filter = ("payment_type",
         "head",
@@ -1461,7 +1540,9 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
         return fields
     
     def get_excel_context_data(self):
-        return {
+
+        context = super().get_excel_context_data()
+        context.update ({
             "projects": list(
                 Project.objects.annotate(
                     end_date_str=models.functions.Cast(
@@ -1556,18 +1637,54 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
                 TDSRate.objects.values("id", "section_id", "percent")
             ),
 
-            "commitments": list(
-                Commitment.objects.filter(status="OPEN").values(
-                    "id",
-                    "commitment_code"
-                )
-            ),
-        }
+            "commitments": CommitmentSerializer(Commitment.objects.filter(status="OPEN"),
+                                                                          many=True).data,
+        })
+
+        return context
+    
+    def get_short_no(self, obj):
+        funding = obj.funding_obj
+
+        if not funding:
+            return "_"
+        
+        if obj.funding_type == "PROJECT":
+            return funding.project_short_no
+        
+        elif obj.funding_type == "SEED":
+            return funding.short_no
+        
+        elif obj.funding_type == "TDG":
+            return funding.short_no
+        
+        return "_"
+    
+    get_short_no.short_description = "Project / Grant No."
+
 
     # ==========================================================
     # Auto Calculations on Save
     # ==========================================================
     def save_model(self, request, obj, form, change):
+
+        if obj.funding_type and obj.funding_id:
+
+            if obj.funding_type == "PROJECT":
+                obj.project = Project.objects.filter(id=obj.funding_id).first()
+                obj.seed_grant = None
+                obj.tdg_grant = None
+
+            elif obj.funding_type == "SEED":
+                obj.seed_grant = SeedGrant.objects.filter(id=obj.funding_id).first()
+                obj.project = None
+                obj.tdg_grant = None
+
+            elif obj.funding_type == "TDG":
+                obj.tdg_grant = TDGGrant.objects.filter(id=obj.funding_id).first()
+                obj.seed_grant = None
+                obj.project = None 
+
         # Auto PI info from funding
         funding = obj.project or obj.seed_grant or obj.tdg_grant
         if funding:
@@ -1587,8 +1704,12 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
 
         # Auto TDS calculation
        
-
+        obj._current_user = request.user
         super().save_model(request, obj, form, change)
+
+    def delete_model(self, request, obj):
+        obj._current_user = request.user
+        super().delete_model(request, obj)
 
 
     
@@ -1865,4 +1986,44 @@ class PayeeAdmin(ExcelViewMixin, admin.ModelAdmin):
     list_filter = ("payee_type", )
 
 custom_admin_site.register(Payee, PayeeAdmin)
+
+
+class AuditLogAdmin(ExcelViewMixin, admin.ModelAdmin):
+    list_display = ("model_name", "action", "user", "timestamp", "formatted_changes")
+    list_filter = ("model_name", "action", "user")
+    search_fields = ("model_name", "object_id")
+    readonly_fields = ("user", "model_name", "object_id", "action", "formatted_changes", "timestamp")
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+    
+    def has_module_permission(self, request):
+        return request.user.is_superuser
+    
+    def has_add_permission(self,request):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        return False
+    
+    def has_delete_permssion(self, request, obj=None):
+        return False
+    
+    def formatted_changes(self, obj):
+        if not obj.changes:
+            return "-"
+        
+        lines = []
+
+        for field, value in obj.changes.items():
+            old = value.get("old", "")
+            new = value.get("new", "")
+
+            lines.append(f"{field}: {old} → {new}")
+
+        return "\n".join(lines)
+    
+    formatted_changes.short_description = "Changes"
+
+custom_admin_site.register(AuditLog, AuditLogAdmin)  
 

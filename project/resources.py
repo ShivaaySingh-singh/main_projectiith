@@ -345,7 +345,7 @@ class ExpenditureResource(resources.ModelResource):
                 row["tdg_grant"] = None
                 return
 
-            raise ValueError(f"Grant with Short_no '{short_no_value}' not found in Seed or TDG")
+            raise ValueError(f"Grant with Short_no '{short_no_value}' not found!")
      
      class Meta:
         model = Expenditure

@@ -64,6 +64,8 @@ class AdminRemarkForm(forms.ModelForm):
 
 class ReceiptForm(forms.ModelForm):
 
+    short_no = forms.ChoiceField(label="Short No.")
+
     class Meta:
         model = Receipt
         fields = [
@@ -81,21 +83,66 @@ class ReceiptForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         project_choices = [
-            (p.project_short_no, f"{p.project_short_no} (Project)")
+            (f"P-{p.id}", f"{p.project_short_no} (Project)")
             for p in Project.objects.all()
         ]
 
         seed_choices = [
-            (s.short_no, f"{s.short_no} (Seed)")
+            (f"S-{s.id}", f"{s.short_no} (Seed)")
             for s in SeedGrant.objects.all()
         ]
 
         tdg_choices = [
-            (t.short_no, f"{t.short_no} (TDG)")
+            (f"T-{t.id}", f"{t.short_no} (TDG)")
             for t in TDGGrant.objects.all()
-         
         ]
 
         self.fields["short_no"].choices = (
             project_choices + seed_choices + tdg_choices
         )
+
+        if self.instance and self.instance.pk:
+            if self.instance.project:
+                self.initial["short_no"] = f"P-{self.instance.project.id}"
+            elif self.instance.seed_grant:
+                self.initial["short_no"] = f"S-{self.instance.seed_grant.id}"
+            elif self.instance.tdg_grant:
+                self.initial["short_no"] = f"T-{self.instance.tdg_grant.id}"
+
+    
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+
+        value = self.cleaned_data.get("short_no")
+
+        if value:
+            prefix, obj_id = value.split("-")
+
+            instance.project = None
+            instance.seed_grant = None
+            instance.tdg_grant = None
+
+            if prefix == "P":
+                instance.project = Project.objects.get(id=obj_id)
+
+            elif prefix == "S":
+                instance.seed_grant = SeedGrant.objects.get(id=obj_id)
+
+            elif prefix == "T":
+                instance.tdg_grant = TDGGrant.objects.get(id=obj_id)
+
+        if commit:
+            instance.save()
+
+        return instance
+
+
+    def clean(self):
+        cleaned_data = super().clean()
+
+        value = cleaned_data.get("short_no")
+
+        if not value:
+            raise forms.ValidationError("Please select a funding source")
+
+        return cleaned_data

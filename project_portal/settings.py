@@ -38,10 +38,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'project',
+    'project.apps.ProjectConfig',
     'sheets_portal',
     'import_export',
     'rest_framework',
+
     
 ]
 
@@ -174,4 +175,60 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+}
+
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+
+    "formatters": {
+        "standard": {
+            "format": "[{asctime}] {levelname} {name} {message}",
+            "style": "{",
+        },
+    },
+
+    "handlers": {
+        "file":{
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(LOG_DIR, "django.log"),
+            "maxBytes": 5 * 1024 * 1024, 
+            "backupCount": 5,
+            "formatter": "standard",
+        },
+
+
+        "error_file": {
+            "level": "ERROR",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(LOG_DIR, "error.log"),
+            "maxBytes": 5 * 1024 * 1024,
+            "backupCount": 5,
+            "formatter": "standard",
+
+        },
+
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+
+    },
+
+    "loggers": {
+        "django": {
+            "handlers": ["file", "error_file", "console"],
+            "level": "INFO",
+            "propagate": True,
+        },
+
+        "mymap": {
+            "handlers": ["file", "error_file"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+    },
 }

@@ -13,8 +13,13 @@ from django.contrib.contenttypes.models import ContentType
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
+from django.db import transaction
 import random
 from django.db.models import Sum
+from django.db.models.functions import Coalesce
+from django.contrib.auth import get_user_model
+import logging
+logger = logging.getLogger("project_portal")
 
 
 fy_validator = RegexValidator(
@@ -379,7 +384,7 @@ class CustomUser(AbstractUser):
     ROLE_CHOICES = (
         ('faculty', 'Faculty'),
         ('admin', 'Admin Member'),
-        ('sheet', 'SheetUser')
+        
 
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='faculty')
@@ -711,27 +716,43 @@ class Expenditure(models.Model):
     remarks = models.TextField(blank=True, null=True)
     
     def clean(self):
+
+        errors = {}
         funding = self.seed_grant or self.tdg_grant or self.project
 
         if not funding:
-            raise ValidationError("Select exactly one funding source.")
+            errors["__all__"] = "Select exactly one funding source."
 
         if sum(bool(x) for x in [self.seed_grant, self.tdg_grant, self.project]) != 1:
-            raise ValidationError("Select only one funding source.")
+            errors["__all__"] = "Select only one funding source."
 
         effective_end = funding.get_effective_end_date()
 
         if self.bill_date > effective_end:
-            raise ValidationError(
-                f"Funding expired on {effective_end}. Entry date not allowed."
+            errors["bill_date"] = (
+                f"Funding expired on {effective_end}. Entry date not allowed"
             )
-
+            
         if getattr(funding, "project_status", None) in ["CLOSED", "EXPIRED"]:
-            raise ValidationError("Funding source is not active.")
+            errors["__all__"] = "Funding source is not active."
+
+        if errors:
+            logger.error(f"Expenditure validation failed: {errors}")
+            raise ValidationError(errors)
         
     def save(self, *args, **kwargs):
-        self.full_clean()
+
+        logger.info(f"Saving Expenditure | Amount: {self.amount}")
+
+        try:
+            self.full_clean()
+        except Exception as e:
+            logger.error(f"Expenditure validation failed: {str(e)}")
+            raise
+
         super().save(*args, **kwargs)
+
+        logger.info(f"Expenditure saved successfully | ID: {self.id}")
     
 
     @property
@@ -742,6 +763,8 @@ class Expenditure(models.Model):
             return self.seed_grant.grant_no
         elif self.tdg_grant:
             return self.tdg_grant.grant_no
+        elif self.project:
+            return self.project.project_no
         return None
     
     @property
@@ -815,26 +838,39 @@ class Commitment(models.Model):
                 return code
 
     def clean(self):
+        errors = {}
         funding = self.seed_grant or self.tdg_grant or self.project
 
         if not funding:
-            raise ValidationError("Select exactly one funding source.")
+            errors["__all__"] = "Select exactly one funding source."
+
 
         if sum(bool(x) for x in [self.seed_grant, self.tdg_grant, self.project]) != 1:
-            raise ValidationError("Select only one funding source.")
-
+            errors["__all__"] = "Select only one funding source."
         effective_end = funding.get_effective_end_date()
 
         if self.bill_date > effective_end:
-            raise ValidationError(
+            errors["bill_date"] = (
                 f"Funding expired on {effective_end}. Entry date not allowed."
             )
 
         if getattr(funding, "project_status", None) in ["CLOSED", "EXPIRED"]:
-            raise ValidationError("Funding source is not active.")
+            errors["__all__"] = "Funding source is not active."
+
+        if errors:
+            logger.error(f"Expenditure validation failed: {errors}")
+            raise ValidationError(errors)
+
         
     def save(self, *args, **kwargs):
-        self.full_clean()
+
+        logger.info(f"Saving Commitment | Amount: {self.gross_amount}")
+
+        try:
+            self.full_clean()
+        except Exception as e:
+            logger.error(f"Commitment validation failed: {str(e)}")
+            raise
         
 
         if not self.commitment_code:
@@ -843,6 +879,8 @@ class Commitment(models.Model):
 
         
         super().save(*args, **kwargs)
+
+        logger.info(f"Commitment saved | Code: {self.commitment_code}")
 
     @property
     def total_paid(self):
@@ -860,6 +898,8 @@ class Commitment(models.Model):
             return self.seed_grant.grant_no
         elif self.tdg_grant:
             return self.tdg_grant.grant_no
+        elif self.project:
+            return self.project.project_no
         return None
     
     @property
@@ -868,6 +908,8 @@ class Commitment(models.Model):
             return self.seed_grant.short_no
         elif self.tdg_grant:
             return self.tdg_grant.short_no
+        elif self.project:
+            return self.project.project_no
         return None
 
     def __str__(self):
@@ -961,7 +1003,11 @@ class Receipt(models.Model):
 
     category = models.ForeignKey(ReceiptCategory, on_delete=models.PROTECT, null=True, blank=True)
 
-    short_no = models.CharField(max_length=100, blank=True, null=True)
+    project = models.ForeignKey(Project, on_delete=models.PROTECT, null=True, blank=True,  related_name="receipts")
+
+    seed_grant = models.ForeignKey(SeedGrant, on_delete=models.PROTECT, null=True, blank=True, related_name="receipts_seed")
+
+    tdg_grant = models.ForeignKey(TDGGrant, on_delete=models.PROTECT, null=True, blank=True, related_name="receipts_tdg")
 
     reference_number = models.CharField(max_length=200, blank=True, null=True)
 
@@ -971,8 +1017,18 @@ class Receipt(models.Model):
 
     remarks = models.TextField(blank=True, null=True)
 
+    @property
+    def short_no(self):
+        if self.project:
+            return self.project.project_short_no
+        elif self.seed_grant:
+            return self.seed_grant.short_no
+        elif self.tdg_grant:
+            return self.tdg_grant.short_no
+        return None
+
     def __str__(self):
-        return f"{self.short_no} | {self.total_amount}"
+        return f"{self.short_no } | {self.total_amount}"
     
 class ReceiptAllocation(models.Model):
 
@@ -983,7 +1039,7 @@ class ReceiptAllocation(models.Model):
     amount = models.DecimalField(max_digits=15, decimal_places=2)
 
     def __str__(self):
-        return f"{self.receipt.short_no} | {self.head.anme}"
+        return f"{self.receipt.short_no} | {self.head.name}"
 
     
 
@@ -1323,21 +1379,24 @@ class Payment(models.Model):
         if self.commitment:
             if self.commitment.status == "CLOSED":
                 errors["commitment"] = "This commitment is closed."
-
-            previous_amount = Decimal("0")
+ 
+            total_paid = self.commitment.payments.aggregate(
+                total=Coalesce(Sum("amount"), Decimal("0"))
+            )["total"]
 
             if self.pk:
                 old = Payment.objects.filter(pk=self.pk).first()
                 if old:
-                    previous_amount = old.amount
+                    total_paid -= old.amount
 
-            allowed_remaining = self.commitment.remaining_amount + previous_amount
+            remaining = self.commitment.gross_amount - total_paid
 
-            if self.amount > allowed_remaining:
-                errors["amount"] = (
-                    f"Only {allowed_remaining} remaining in this commitment."
+            if self.amount > remaining:
+                errors["amount"]= (
+                    f"Only {remaining} remaining in this comitment."
+                )
 
-                )                
+                
 
         if errors:
             raise ValidationError(errors)
@@ -1345,38 +1404,72 @@ class Payment(models.Model):
 
 
     def save(self, *args, **kwargs):
-        funding = self.funding_obj
 
-        if funding:
-            self.project = None
-            self.seed_grant = None
-            self.tdg_grant = None
+        with transaction.atomic():
 
-            if self.funding_type == "PROJECT":
-                self.project = funding
-            elif self.funding_type == "SEED":
-                self.seed_grant = funding
-
-            elif self.funding_type == "TDG":
-                self.tdg_grant = funding
-
-            faculty = getattr(funding,"faculty", None)
-            self.pi_name = getattr(funding, "pi_name", None)
-            self.pi_email = faculty.email if faculty else None
-
-        else:
-            funding = self.seed_grant or self.tdg_grant or self.project
-            if funding:
-                faculty = getattr(funding, "faculty", None)
-                self.pi_name = getattr(funding, "pi_name", None)
-                self.pi_email = faculty.email if faculty else None 
-
-        if self.payee:
-            self.payee_email = self.payee.email
             
-        self.calculate_taxes()
-        self.full_clean()
-        super().save(*args, **kwargs)
+
+            logger.info(f"Saving Payment | Amount: {self.amount}")
+
+            funding = self.funding_obj
+
+            if funding:
+                self.project = None
+                self.seed_grant = None
+                self.tdg_grant = None
+
+                if self.funding_type == "PROJECT":
+                    self.project = funding
+                elif self.funding_type == "SEED":
+                    self.seed_grant = funding
+
+                elif self.funding_type == "TDG":
+                    self.tdg_grant = funding
+
+                faculty = getattr(funding,"faculty", None)
+                self.pi_name = getattr(funding, "pi_name", None)
+                self.pi_email = faculty.email if faculty else None
+
+            else:
+                funding = self.seed_grant or self.tdg_grant or self.project
+                if funding:
+                    faculty = getattr(funding, "faculty", None)
+                    self.pi_name = getattr(funding, "pi_name", None)
+                    self.pi_email = faculty.email if faculty else None 
+
+            if self.payee:
+                self.payee_email = self.payee.email
+            
+            self.calculate_taxes()
+
+            if self.commitment:
+                commitment = Commitment.objects.select_for_update().get(id=self.commitment.id)
+                total_paid = commitment.payments.aggregate(
+                    total=Coalesce(Sum("amount"), Decimal("0"))
+                )["total"]
+
+                if self.pk:
+                    old = Payment.objects.filter(pk=self.pk).first()
+                    if old:
+                        total_paid -= old.amount
+
+                    remaining = commitment.gross_amount - total_paid
+
+                    if self.amount > remaining:
+                        logger.error(f"Overpayment: {self.amount} > {remaining}")
+                        raise ValidationError({
+                            "amount": f"Only {remaining} remaining for this commitment."
+                        })
+
+            try: 
+                self.full_clean()
+            except Exception as e:
+                logger.error(f"Payment validation failed: {str(e)}")
+                raise
+
+            super().save(*args, **kwargs)
+
+            logger.info("Payment saved successfully | ID: {self.id}")
 
     def __str__(self):
         if self.project:
@@ -1387,10 +1480,49 @@ class Payment(models.Model):
             code = self.tdg_grant.short_no
         else:
             code = "-"
-        return f"{code} | {self.net_amount}"
+        return f"{code} | {self.amount}"
+    
+    @property
+    def short_no(self):
+        if self.project:
+            return self.project.project_short_no
+        elif self.seed_grant:
+            return self.seed_grant.short_no
+        elif self.tdg_grant:
+            return self.tdg_grant.short_no
+        
+    def get_short_no(self, obj):
+        return obj.short_no or "_"
 
     class Meta:
         verbose_name = "Payment"
         verbose_name_plural = "Payments"
         ordering = ["date"]
+
+User = get_user_model()
+
+class AuditLog(models.Model):
+
+    ACTION_CHOICES = (
+        ("CREATE", "Create"),
+        ("UPDATE", "Update"),
+        ("DELETE", "Delete"),
+    )
+
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    model_name = models.CharField(max_length=100)
+    object_id = models.CharField(max_length=50)
+
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES)
+
+    changes = models.JSONField(null=True, blank=True)
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.model_name} | {self.action} | {self.timestamp}"
+
+
+
+
 
