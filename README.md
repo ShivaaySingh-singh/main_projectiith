@@ -40,4 +40,15 @@ while the R&D admin team gets a powerful dashboard to manage evrything end-to- e
 | 🔒 Data Isolation | Faculty sees only their own project data
 
 
-# Tech Stack 
+# Tech Stack
+
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | HTML / CSS / JavaScript (Templates) |
+| Backend | Django (Python) |
+| API | Django Rest Framework (DRF) |
+| Database | PostgreSQL |
+| Authentication | JWT (JSON Web Tokens) |
+| Web Server | Nginx |
+| App Server | Gunicorn |
