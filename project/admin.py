@@ -26,7 +26,7 @@ import json  #  ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant, ReceiptAllocation, ReceiptCategory,
-    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName, AuditLog
+    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName, AuditLog,
 )
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
@@ -287,6 +287,22 @@ class CustomAdminSite(admin.AdminSite):
                     'models': group_models,
                     'has_module_perms': True,
                 })
+        custom_app_list.append({
+            'name': 'Reports',
+            'app_label': 'reports',
+            'has_module_perms': True,
+            'models': [
+                {
+            
+                    'name': 'Committed Payments',
+                    'object_name' : 'CommittedPayments',
+                    'admin_url': '/admin/committed-payments/',
+                    'view_only': True,
+                },
+            ],
+
+
+        })
         
         return custom_app_list
     
@@ -304,8 +320,70 @@ class CustomAdminSite(admin.AdminSite):
                 self.admin_view(seed_grant_detail_view),
                 name="seed_grant_detail"
             ),
+            path(
+                "committed-payments/",
+                self.admin_view(committed_payments_view),
+                name="committed_payments"
+            ),
         ]
         return custom_urls + urls
+    
+
+
+def committed_payments_view(request):
+    import json
+    from decimal import Decimal
+
+    payments = Payment.objects.filter(commitment__isnull=False).select_related(
+        "head", "payee", "payment_type", "bank", "tds_section", "tds_rate", "commitment",
+        "project", "seed_grant", "tdg_grant",
+    ).order_by("date", "id")
+
+    data = []
+    for p in payments:
+        data.append({
+            "id": p.id,
+            "date": str(p.date) if p.date else "",
+            "short_no": p.short_no or "-",
+            "head": p.head.name if p.head else "",
+            "payment_type": str(p.payment_type) if p.payment_type else "",
+            "commitment_code": p.commitment.commitment_code if p.commitment else "",
+            "payee": p.payee.name_of_payee if p.payee else "",
+            "payee_pan": p.payee_pan or "",
+            "bank":              p.bank.bank_name if p.bank else "",
+            "cheque_no":         p.cheque_no or "",
+            "utr_no":            p.utr_no or "",
+            "payee_bank_name":   p.payee_bank_name or "",
+            #"payee_branch_name": p.payee_branch_name or "",
+            "payee_account_no":  p.payee_account_no or "",
+            #"payee_ifsc":        p.payee_ifsc or "",
+            "pi_name":           p.pi_name or "",
+            "amount":            str(p.amount) if p.amount else "0",
+            "tds_section":       p.tds_section.section if p.tds_section else "",
+            "tds_rate":          str(p.tds_rate.percent) if p.tds_rate else "",
+            "tds_amount":        str(p.tds_amount) if p.tds_amount else "0",
+            "gst_tds_type":      p.gst_tds_type or "",
+            "igst_tds":          str(p.igst_tds) if p.igst_tds else "0",
+            "cgst_tds":          str(p.cgst_tds) if p.cgst_tds else "0",
+            "sgst_tds":          str(p.sgst_tds) if p.sgst_tds else "0",
+            "net_amount":        str(p.net_amount) if p.net_amount else "0",
+            "purpose":           p.purpose or "",
+            "payment_status":    p.payment_status or "",
+        })
+
+    context = {
+        "payments_data": json.dumps(data),
+        "total_count":   len(data),
+        # ✅ Admin context ke liye
+        "title": "Committed Payments",
+        "site_header": custom_admin_site.site_header,
+        "site_title":  custom_admin_site.site_title,
+        "has_permission": True,
+    }
+
+
+
+    return render(request, "admin/committed_payments.html", context)
 
 
 def project_fund_detail_view(request):
@@ -314,6 +392,8 @@ def project_fund_detail_view(request):
 
 def seed_grant_detail_view(request):
     return bill_report_admin(request)
+
+
 
 
 # Create custom admin site instance
@@ -390,7 +470,7 @@ class FacultyInline(admin.StackedInline):
     can_delete = False
     verbose_name_plural = "Faculty Details"
     fk_name = "user"
-    extra = 0
+    extra = 1
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -414,6 +494,8 @@ class FacultyAdmin(admin.ModelAdmin):
 
 
 class CustomUserAdmin(BaseUserAdmin):
+    class Media:
+        js = ('admin/js/role_toggle.js',)
     add_form = CustomUserCreationForm
     inlines = (FacultyInline,)
     #exclude = ("groups", "user_permissions",)  you can uncomment this if you dont want to seee groups and ser permssion
@@ -443,6 +525,39 @@ class CustomUserAdmin(BaseUserAdmin):
     list_filter = ("is_staff", "is_superuser", "is_active", "groups")
     filter_horizontal = ("groups", "user_permissions")
 
+    def get_fieldsets(self, request, obj=None):
+        if obj is None:
+            return super().get_fieldsets(request, obj)
+        
+        if obj.role == 'faculty':
+            return (
+                (None, {"fields": ("username", "email", "password")}),
+                ("Personal info", {"fields": ("first_name", "last_name")}),
+                ("Role", {"fields": ("role",)}),
+                ("Permissions", {
+                    "fields": (
+                        "is_active",
+
+                    ),
+                }),
+                ("Important dates", {"fields": ("last_login", "date_joined")}),
+            )
+        return self.fieldsets
+    
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if object_id:
+            try:
+                obj = self.get_object(request, object_id)
+                if obj and obj.role == 'faculty':
+                    self.filter_horizontal = ()
+                else:
+                    self.filter_horizontal = ("groups", "user_permissions")
+
+            except Exception:
+                pass
+
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
     def get_inline_instances(self, request, obj=None):
         """
         Admin/Sheet role me Faculty inline HIDE 
@@ -451,7 +566,7 @@ class CustomUserAdmin(BaseUserAdmin):
         inline_instances = []
 
         if obj is None:
-            return super().get_inline_instances(request, obj)
+            return [FacultyInline(self.model, self.admin_site)]
         
         #Existing user edit kar rhe ho  sirf faculty role me inline dikhao 
         if obj.role == 'faculty':
@@ -2026,4 +2141,5 @@ class AuditLogAdmin(ExcelViewMixin, admin.ModelAdmin):
     formatted_changes.short_description = "Changes"
 
 custom_admin_site.register(AuditLog, AuditLogAdmin)  
+
 

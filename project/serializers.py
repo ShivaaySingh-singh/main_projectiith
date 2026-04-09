@@ -808,3 +808,5 @@ class PayeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payee
         fields = "__all__"
+
+

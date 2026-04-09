@@ -122,8 +122,11 @@
                 <th>S.No.</th>
                 <th>Sanction Head</th>
                 <th>Amount</th>
-                <th>Expenditure</th>
+                <th>Receipt</th>
+                <th>Payment</th>
+                
                 <th>Commitment</th>
+                <th>Remaining Commitment</th>
                 <th>Balance</th>
             </tr>
         </thead>
@@ -133,8 +136,11 @@
                 <td>{{ forloop.counter }}</td>
                 <td>{{ row.head }}</td>
                 <td>{{ row.sanction }}</td>
-                <td>{{ row.expenditure }}</td>
+                <td>{{ row.receipt }}</td>
+                <td>{{ row.payment }}</td>
+                
                 <td>{{ row.commitment }}</td>
+                <td>{{ row.com_remaining }}</td>
                 <td>{{ row.balance }}</td>
             </tr>
             {% endfor %}
@@ -142,8 +148,11 @@
             <tr class="fw-bold table-secondary">
                 <td colspan="2">Total</td>
                 <td>{{ totals.budget }}</td>
-                <td>{{ totals.expenditure }}</td>
+                <td>{{ totals.receipt }}</td>
+                <td>{{ totals.payment }}</td>
+                
                 <td>{{ totals.commitment }}</td>
+                <td>{{ totals.com_remaining }}</td>
                 <td>{{ totals.balance }}</td>
             </tr>
         </tbody>
@@ -154,7 +163,7 @@
 <div class="section">
     <table class="table table-bordered w-50 mx-auto">
         <tr><th>Budget</th><td>{{ totals.budget }}</td></tr>
-        <tr><th>Expenditure</th><td>{{ totals.expenditure }}</td></tr>
+        <tr><th>Payments</th><td>{{ totals.payment }}</td></tr>
         <tr><th>Commitment</th><td>{{ totals.commitment }}</td></tr>
         <tr><th>Balance</th><td><strong>{{ totals.balance }}</strong></td></tr>
     </table>
@@ -162,36 +171,114 @@
 
 <!-- ✅ Expenditure Details -->
 <div class="section">
-    <h4>Expenditure</h4>
-    <table class="table table-bordered w-100 mx-auto">
-        <thead>
-            <tr>
-                <th>S.No.</th>
-                <th>Date</th>
-                <th>Voucher No</th>
-                <th>Head</th>
-                <th>Particulars</th>
-                <th>Amount (₹)</th>
-                <th>Remarks</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for exp in expenditures %}
-            <tr>
-                <td>{{ forloop.counter }}</td>
-                <td>{{ exp.date|date:"d-m-Y" }}</td>
-                <td>{{ exp.voucher_no|default:"-" }}</td>
-                <td>{{ exp.head }}</td>
-                <td>{{ exp.particulars }}</td>
-                <td>{{ exp.amount }}</td>
-                <td>{{ exp.remarks|default:"-" }}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="7">No expenditure records found.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+    <h4>Payment / Expenditure</h4>
+    
+    <div style="margin-bottom: 10px;">
+        <div class="accordion-header" onclick="toggleAccordion('direct-payments')"
+            style="background:#dbe7f9; padding:12px 20px; border-radius:5px; cursor:pointer;
+                  display:flex; justify-content:space-between; align-items:center; font-weight:bold;">
+            <span> Payments ({{ direct_payments|length }})</span>
+        </div>
+        <div id="direct-payments" style="display:none; margin-top:5px;">   
+            <table class="table table-bordered w-100 mx-auto">
+                <thead>
+                    <tr>
+                        <th>S.No.</th>
+                        <th>Date</th>
+                        <th>Head</th>
+                        <th>PaymentType</th>
+                        <th>Payee</th>
+                        <th>Bank</th>
+                        <th>Amount</th>
+                        <th>Tax U/s</th>
+                        <th>Tds%</th>
+                        <th>Gst Tds Type</th>
+                        <th>Igst Tds</th>
+                        <th>Cgst Tds</th>
+                        <th>Sgst Tds</th>
+                        <th>Net Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pay in direct_payments %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td>{{ pay.date|date:"d-m-Y" }}</td>
+                        <td>{{ pay.head }}</td>
+                        <td>{{ pay.payment_type }}</td>
+                        <td>{{ pay.payee }}</td>
+                        <td>{{ pay.bank|default:"-" }}</td>
+                        <td>{{ pay.amount }}</td>
+                        <td>{{ pay.tax_u_s }}</td>
+                        <td>{{ pay.tds_percent }}</td>
+                        <td>{{ pay.gst_tds_type|default:"-" }}</td>
+                        <td>{{ pay.igst_tds }}</td>
+                        <td>{{ pay.cgst_tds }}</td>
+                        <td>{{ pay.sgst_tds }}</td>
+                        <td>{{ pay.net_amount }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="14">No direct payment records found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div style="margin-bottom: 10px;">
+        <div class="accordion-header" onclick="toggleAccordion('committed-payments')"
+            style="background:#dbe7f9; padding:12px 20px; border-radius:5px; cursor:pointer;
+                  display:flex; justify-content:space-between; align-items:center; font-weight:bold;">
+            <span> Payments against Commitment ({{ committed_payments|length }})</span>
+        </div>
+        <div id="committed-payments" style="display:none; margin-top:5px;">   
+            <table class="table table-bordered w-100 mx-auto">
+                <thead>
+                    <tr>
+                        <th>S.No.</th>
+                        <th>Date</th>
+                        <th>Head</th>
+                        <th>PaymentType</th>
+                        <th>Payee</th>
+                        <th>Bank</th>
+                        <th>Amount</th>
+                        <th>Tax U/s</th>
+                        <th>Tds%</th>
+                        <th>Gst Tds Type</th>
+                        <th>Igst Tds</th>
+                        <th>Cgst Tds</th>
+                        <th>Sgst Tds</th>
+                        <th>Net Amount</th>
+                        <th>Commitment Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pay in committed_payments %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td>{{ pay.date|date:"d-m-Y" }}</td>
+                        <td>{{ pay.head }}</td>
+                        <td>{{ pay.payment_type }}</td>
+                        <td>{{ pay.payee }}</td>
+                        <td>{{ pay.bank|default:"-" }}</td>
+                        <td>{{ pay.amount }}</td>
+                        <td>{{ pay.tax_u_s }}</td>
+                        <td>{{ pay.tds_percent }}</td>
+                        <td>{{ pay.gst_tds_type|default:"-" }}</td>
+                        <td>{{ pay.igst_tds }}</td>
+                        <td>{{ pay.cgst_tds }}</td>
+                        <td>{{ pay.sgst_tds }}</td>
+                        <td>{{ pay.net_amount }}</td>
+                        <td>{{ pay.commitment.particulars|default:"-" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="9">No committed payment records found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>    
 
 <!-- ✅ Commitment Details -->
 <div class="section">
@@ -204,7 +291,8 @@
                 <th>Voucher No</th>
                 <th>Head</th>
                 <th>Particulars</th>
-                <th>Amount (₹)</th>
+                <th> Gross Amount (₹)</th>
+                <th> Remaining Amount (₹)</th>
                 <th>Remarks</th>
             </tr>
         </thead>
@@ -217,6 +305,7 @@
                 <td>{{ com.head }}</td>
                 <td>{{ com.particulars }}</td>
                 <td>{{ com.gross_amount }}</td>
+                <td>{{ com.remaining_amount }}</td>
                 <td>{{ com.remarks|default:"-" }}</td>
             </tr>
             {% empty %}
@@ -230,6 +319,16 @@
 setInterval(function() {
     location.reload();
 }, 30000);
+
+
+function toggleAccordion(id) {
+    var content = document.getElementById(id);
+    if (content.style.display === "none") {
+        content.style.display = "block";
+    } else {
+        content.style.display = "none";
+    }
+}
 </script>
 
 {% endblock %}

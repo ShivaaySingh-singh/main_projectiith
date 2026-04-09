@@ -77,7 +77,7 @@ IIT Hyderabad
 
 TRACK_MODELS = ["Payment", "Commitment", "Expenditure"]
 
-def get_chnages(old, new):
+def get_changes(old, new):
     changes = {}
 
     for field in new._meta.fields:
@@ -124,7 +124,7 @@ def log_create_update(sender, instance, created, **kwargs):
         old = getattr(instance, "_old_instance", None)
 
         if old:
-            changes = get_chnages(old, instance)
+            changes = get_changes(old, instance)
 
             if changes:
                 AuditLog.objects.create(

@@ -26,9 +26,7 @@ urlpatterns = [
     path('bill_inwards/', views.inward_bills_view, name='bill_inwards'),
     path("projects/<str:short_no>/balance-sheet/",views.project_balance_sheet, name="project_balance_sheet"),
     
-    
-    
-
+     
 ]
 
 

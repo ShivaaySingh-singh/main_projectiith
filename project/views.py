@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponseRedirect, JsonResponse
 from django.core.serializers.json import DjangoJSONEncoder
-from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment, ProjectSanctionDistribution,Payee,ReceiptHead
+from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment, ProjectSanctionDistribution,Payee,ReceiptHead, ReceiptAllocation
 from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
 import re
@@ -26,7 +26,7 @@ from django.core.exceptions import ValidationError
 
 from .serializers import (
     ExpenditureSerializer, CommitmentSerializer, SeedGrantSerializer,TDGGrantSerializer,FundRequestSerializer,ProjectSerializer,BillInwardSerializer,PaymentSerializer,ReceiptSerializer,
-    ProjectSanctionDistributionSerializer, PayeeSerializer
+    ProjectSanctionDistributionSerializer, PayeeSerializer, 
 
 
 )
@@ -420,7 +420,8 @@ class GenericModelAPIView(APIView):
         'payment': (Payment, PaymentSerializer),
         'receipt': (Receipt, ReceiptSerializer),
         'projectsanctiondistribution': (ProjectSanctionDistribution, ProjectSanctionDistributionSerializer),
-        'payee': (Payee, PayeeSerializer)
+        'payee': (Payee, PayeeSerializer),
+        
     }
 
     def get_model_and_serializer(self, model_name):
@@ -759,39 +760,74 @@ def project_balance_sheet(request, short_no):
         head_name = row.head.name if row.head else "Unknown"
         head_totals[head_name] += row.sanctioned_amount or Decimal("0.00")
     
-    expenditures = Expenditure.objects.filter(project=project).order_by("date", "id")
-    commitments = Commitment.objects.filter(project=project).order_by("date", "id")
+    #expenditures = Expenditure.objects.filter(project=project).order_by("date", "id")
+    commitments = Commitment.objects.filter(project=project).prefetch_related("payments").order_by("date", "id")
 
-    exp_head_sum = defaultdict(Decimal)
+    direct_payments = Payment.objects.filter(project=project, commitment__isnull=True).select_related("head", "payee", "payment_type").order_by("date", "id")
+
+    committed_payments = Payment.objects.filter(project=project, commitment__isnull=False).select_related("head", "payee", "payment_type", "commitment").order_by("date", "id")
+    payments = Payment.objects.filter(project=project).select_related("head").order_by("date", "id")
+
+    receipt_allocations = (
+        ReceiptAllocation.objects
+        .filter(receipt__project=project)
+        .select_related("head")
+
+    )
+    #exp_head_sum = defaultdict(Decimal)
     com_head_sum = defaultdict(Decimal)
+    com_remaining_head_sum = defaultdict(Decimal)
+    rec_head_sum = defaultdict(Decimal)
+    pay_head_sum = defaultdict(Decimal)
 
-    for e in expenditures:
-        exp_head_sum[e.head] += e.amount
+    #for e in expenditures:
+        #exp_head_sum[e.head] += e.amount or Decimal("0.00")
     
     for c in commitments:
-        com_head_sum[c.head] += c.gross_amount
+        head_name = c.head.strip() if c.head else "Unknown"
+        com_head_sum[head_name] += c.gross_amount or Decimal("0.00")
+        com_remaining_head_sum[head_name]  += c.remaining_amount or Decimal("0.00")
 
-    all_heads = set(head_totals.keys()) | set(exp_head_sum.keys()) | set(com_head_sum.keys())
+    for ra in receipt_allocations:
+        head_name = ra.head.name.strip() if ra.head else "Unknown"
+        rec_head_sum[head_name] += ra.amount or Decimal("0.00")
+
+    for p in payments:
+        head_name = p.head.name.strip() if p.head else "Unknown"
+        pay_head_sum[head_name] += p.amount or Decimal("0.00")
+
+   
+
+    all_heads = (set(head_totals.keys()) |  set(com_head_sum.keys()) | set(rec_head_sum.keys()) | set(pay_head_sum.keys()) | set(com_remaining_head_sum.keys()))
 
     report_rows = []
     for head in sorted(all_heads):
         sanction = head_totals.get(head, Decimal("0.00"))
-        expenditure = exp_head_sum.get(head, Decimal("0.00"))
+        receipt = rec_head_sum.get(head, Decimal("0.00"))
+        
         commitment = com_head_sum.get(head, Decimal("0.00"))
-        balance = sanction - (expenditure + commitment)
+        com_remaining = com_remaining_head_sum.get(head, Decimal("0.00"))
+        payment = pay_head_sum.get(head, Decimal("0.00"))
+        balance = receipt - payment
 
         report_rows.append({
             "head": head,
             "sanction": sanction,
-            "expenditure": expenditure,
+            "receipt": receipt,
+            "payment": payment,
+            
             "commitment": commitment,
+            "com_remaining": com_remaining,
             "balance": balance,
         })
     
     totals = {
         "budget": sum([r["sanction"] for r in report_rows], Decimal("0.00")),
-        "expenditure": sum([r["expenditure"] for r in report_rows], Decimal("0.00")),
+        "receipt": sum([r["receipt"] for r in report_rows], Decimal("0.00")),
+        "payment": sum([r["payment"] for r in report_rows], Decimal("0.00")),
+        #"expenditure": sum([r["expenditure"] for r in report_rows], Decimal("0.00")),
         "commitment": sum([r["commitment"] for r in report_rows], Decimal("0.00")),
+        "com_remaining": sum([r["com_remaining"] for r in report_rows], Decimal("0.00")),
         "balance": sum([r["balance"] for r in report_rows], Decimal("0.00")),
     }
 
@@ -802,8 +838,11 @@ def project_balance_sheet(request, short_no):
         "total_budget": total_budget,
         "report_rows": report_rows,
         "totals": totals,
-        "expenditures": expenditures,
+        
         "commitments": commitments,
+        "payments": payments,
+        "direct_payments": direct_payments,
+        "committed_payments": committed_payments,
     }
 
     return render(request, "project_balance_sheet.html", context)

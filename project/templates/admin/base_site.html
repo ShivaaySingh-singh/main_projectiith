@@ -1,0 +1,13 @@
+{% if custom_links %}
+    <div class="module">
+        <table>
+        <caption>Quick Links</caption>
+        {% for link in custom_links %}
+            <tr>
+                <td>
+                    <a href="{{ link.url }}">{{ link.icon }} {{ link.name }}</a>
+                </td>
+            </tr>
+        {% endfor %}
+        </table>
+    </div>

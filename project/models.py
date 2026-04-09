@@ -46,8 +46,8 @@ class Faculty(models.Model):
     def __str__(self):
         return self.pi_name
     class Meta:
-        verbose_name = "Faculty Member"
-        verbose_name_plural = "Faculty Members"
+        verbose_name = "Faculty Detail"
+        verbose_name_plural = "Faculty Deatails"
 
 class CoPiName(models.Model):
     faculty_id = models.CharField(max_length=15, unique=True)
@@ -1521,6 +1521,7 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.model_name} | {self.action} | {self.timestamp}"
+
 
 
 

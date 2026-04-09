@@ -1,0 +1,208 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine.css">
+<style>
+    .content { padding: 0 !important; }
+    .excel-header {
+        background: linear-gradient(135deg, #417690 0%, #2e5266 100%);
+        color: white; padding: 20px 30px;
+        border-bottom: 3px solid #1e3a4a;
+    }
+    .excel-header h1 { margin: 0 0 5px 0; font-size: 24px; font-weight: 600; }
+    .excel-header .breadcrumbs { color: rgba(255,255,255,0.8); font-size: 13px; margin: 0; }
+    .excel-header .breadcrumbs a { color: white; text-decoration: none; }
+    .search-bar {
+        background: white; padding: 15px 30px;
+        border-bottom: 2px solid #e0e0e0;
+        display: flex; gap: 15px; align-items: center; flex-wrap: wrap;
+    }
+    .search-input-group { display: flex; align-items: center; gap: 8px; min-width: 200px; }
+    .search-input-group label { font-weight: 600; font-size: 13px; color: #333; white-space: nowrap; }
+    .search-input-group input {
+        padding: 8px 12px; border: 2px solid #ddd;
+        border-radius: 5px; font-size: 14px;
+    }
+    .search-input-group input:focus { outline: none; border-color: #417690; }
+    .btn-search {
+        background: #417690; color: white; padding: 8px 16px;
+        border: none; border-radius: 5px; cursor: pointer; font-weight: 600;
+    }
+    .btn-search:hover { background: #2e5266; }
+    .btn-clear {
+        background: #6c757d; color: white; padding: 8px 16px;
+        border: none; border-radius: 5px; cursor: pointer; font-weight: 600;
+    }
+    .controls-bar {
+        background: #f8f9fa; padding: 15px 30px;
+        border-bottom: 1px solid #ddd;
+        display: flex; gap: 10px; align-items: center;
+    }
+    .btn { padding: 10px 16px; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; font-size: 13px; }
+    .btn-warning { background: #ffc107; color: #333; }
+    .status {
+        margin-left: auto; padding: 8px 15px;
+        background: #d4edda; border-radius: 5px;
+        font-weight: 600; font-size: 13px; color: #155724;
+    }
+    .summary-bar {
+        padding: 10px 25px; background: #eef5ff;
+        border-bottom: 2px solid #d0ddf0;
+        font-weight: 600; display: flex; gap: 40px; align-items: center;
+    }
+    .grid-container {
+        margin: 20px 30px; background: white;
+        border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); overflow: hidden;
+    }
+    #myGrid { height: calc(100vh - 340px); min-height: 500px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="excel-header">
+    <div class="breadcrumbs">
+        <a href="/admin/">Home</a> › Reports › Committed Payments
+    </div>
+    <h1> Committed Payments </h1>
+</div>
+
+<!-- Search Bar -->
+<div class="search-bar">
+    <div class="search-input-group">
+        <label>Short No:</label>
+        <input type="text" id="searchShortNo" placeholder="Search by short no...">
+    </div>
+    <div class="search-input-group">
+        <label>Commitment Code:</label>
+        <input type="text" id="searchCode" placeholder="Search by commitment code...">
+    </div>
+    <div class="search-input-group">
+        <label>Date From:</label>
+        <input type="date" id="searchDateFrom">
+    </div>
+    <div class="search-input-group">
+        <label>Date To:</label>
+        <input type="date" id="searchDateTo">
+    </div>
+    <button class="btn-search" onclick="applySearch()">Search</button>
+    <button class="btn-clear" onclick="clearSearch()"> Clear</button>
+</div>
+
+<!-- Controls -->
+<div class="controls-bar">
+    <button class="btn btn-warning" onclick="location.reload()"> Refresh</button>
+    <span class="status" id="statusMessage">Loaded {{ total_count }} records</span>
+</div>
+
+<!-- Summary -->
+<div class="summary-bar" id="summaryBar"></div>
+
+<!-- Grid -->
+<div class="grid-container">
+    <div id="myGrid" class="ag-theme-alpine"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
+<script>
+    const allData = {{ payments_data|safe }};
+    let gridApi;
+
+    const columnDefs = [
+        { headerName: "ID",               field: "id",               width: 80,  pinned: "left" },
+        { headerName: "Date",             field: "date",             width: 120 },
+        { headerName: "Short No",         field: "short_no",         width: 150 },
+        { headerName: "Head",             field: "head",             width: 150 },
+        { headerName: "Payment Type",     field: "payment_type",     width: 160 },
+        { headerName: "Commitment Code",  field: "commitment_code",  width: 160 },
+        { headerName: "Payee",            field: "payee",            width: 220 },
+        { headerName: "PAN",              field: "payee_pan",        width: 140 },
+        { headerName: "Bank",             field: "bank",             width: 180 },
+        { headerName: "Cheque No",        field: "cheque_no",        width: 130 },
+        { headerName: "UTR No",           field: "utr_no",           width: 140 },
+        { headerName: "Payee Bank",       field: "payee_bank_name",  width: 160 },
+        
+        { headerName: "Account No",       field: "payee_account_no", width: 160 },
+        
+        { headerName: "PI Name",          field: "pi_name",          width: 180 },
+        { headerName: "Amount",           field: "amount",           width: 130,
+            valueFormatter: p => p.value ? "₹" + parseFloat(p.value).toLocaleString("en-IN", {minimumFractionDigits: 2}) : "",
+            cellStyle: { textAlign: "right", fontWeight: "bold", color: "#d9534f" }
+        },
+        { headerName: "Tax U/S",          field: "tds_section",      width: 120 },
+        { headerName: "TDS %",            field: "tds_rate",         width: 100 },
+        { headerName: "TDS Amount",       field: "tds_amount",       width: 130,
+            valueFormatter: p => p.value ? "₹" + parseFloat(p.value).toLocaleString("en-IN", {minimumFractionDigits: 2}) : "",
+            cellStyle: { textAlign: "right", color: "#d9534f" }
+        },
+        { headerName: "GST TDS Type",     field: "gst_tds_type",     width: 130 },
+        { headerName: "IGST TDS",         field: "igst_tds",         width: 110 },
+        { headerName: "CGST TDS",         field: "cgst_tds",         width: 110 },
+        { headerName: "SGST TDS",         field: "sgst_tds",         width: 110 },
+        { headerName: "Net Amount",       field: "net_amount",       width: 130,
+            valueFormatter: p => p.value ? "₹" + parseFloat(p.value).toLocaleString("en-IN", {minimumFractionDigits: 2}) : "",
+            cellStyle: { textAlign: "right", fontWeight: "bold", color: "#28a745" }
+        },
+        { headerName: "Purpose",          field: "purpose",          width: 200 },
+        { headerName: "Status",           field: "payment_status",   width: 130 },
+    ];
+
+    const gridOptions = {
+        columnDefs: columnDefs,
+        rowData: allData,
+        defaultColDef: {
+            sortable: true,
+            filter: true,
+            resizable: true,
+            editable: false,  // ✅ read only
+        },
+        animateRows: true,
+        pagination: true,
+        paginationPageSize: 100,
+        paginationPageSizeSelector: [50, 100, 250, 500],
+    };
+
+    document.addEventListener("DOMContentLoaded", function() {
+        gridApi = agGrid.createGrid(document.querySelector("#myGrid"), gridOptions);
+        updateSummary(allData);
+    });
+
+    function applySearch() {
+        const shortNo    = document.getElementById("searchShortNo").value.toLowerCase();
+        const code       = document.getElementById("searchCode").value.toLowerCase();
+        const dateFrom   = document.getElementById("searchDateFrom").value;
+        const dateTo     = document.getElementById("searchDateTo").value;
+
+        let filtered = [...allData];
+
+        if (shortNo)   filtered = filtered.filter(r => (r.short_no || "").toLowerCase().includes(shortNo));
+        if (code)      filtered = filtered.filter(r => (r.commitment_code || "").toLowerCase().includes(code));
+        if (dateFrom)  filtered = filtered.filter(r => r.date >= dateFrom);
+        if (dateTo)    filtered = filtered.filter(r => r.date <= dateTo);
+
+        gridApi.setGridOption("rowData", filtered);
+        updateSummary(filtered);
+        document.getElementById("statusMessage").textContent = `Found ${filtered.length} records`;
+    }
+
+    function clearSearch() {
+        document.getElementById("searchShortNo").value  = "";
+        document.getElementById("searchCode").value     = "";
+        document.getElementById("searchDateFrom").value = "";
+        document.getElementById("searchDateTo").value   = "";
+        gridApi.setGridOption("rowData", allData);
+        updateSummary(allData);
+        document.getElementById("statusMessage").textContent = `Showing all ${allData.length} records`;
+    }
+
+    function updateSummary(data) {
+        const total = data.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+        document.getElementById("summaryBar").innerHTML = `
+            <span>Total Records: <strong>${data.length}</strong></span>
+            <span>Total Amount: <strong>₹${total.toLocaleString("en-IN", {minimumFractionDigits: 2})}</strong></span>
+        `;
+    }
+</script>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+{% endblock %}
