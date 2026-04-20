@@ -440,6 +440,9 @@ class ProjectSerializer(serializers.ModelSerializer):
         return validated_data
     
     def create(self, validated_data):
+
+        audit_user = validated_data.pop('_current_user', None)
+
         user = self.context["request"].user
 
         validated_data = self._protect_system_fields(validated_data)
@@ -453,9 +456,17 @@ class ProjectSerializer(serializers.ModelSerializer):
             if validated_data.get("is_extended") is True:
                 validated_data["extension_approved_by"] = user
 
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+
+        if audit_user:
+            instance._current_user = audit_user
+        
+        return instance
     
     def update(self, instance, validated_data):
+
+        audit_user = validated_data.pop('_current_user', None)
+
         validated_data.pop("project_status", None)
         user = self.context["request"].user
 
@@ -470,7 +481,12 @@ class ProjectSerializer(serializers.ModelSerializer):
             if validated_data.get("is_extended") is True:
                 instance.extension_approved_by = user
 
-        return super().update(instance, validated_data)
+        instance = super().update(instance, validated_data)
+
+        if audit_user:
+            instance._current_user = audit_user
+
+        return instance
 
 
 

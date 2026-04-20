@@ -567,11 +567,18 @@
     function buildColumnDefinitions() {
         const cols = [
             {
-                headerName: "",
-                checkboxSelection: true,
-                headerCheckboxSelection: true,
-                width: 50,
-                pinned: 'left'
+                headerName: "Sr. No.",
+                width: 90,
+                pinned: 'left',
+                valueGetter: function(params) {
+                    if (params.api.paginationGetCurrentPage) {
+                        return params.api.paginationGetCurrentPage() * params.api.paginationGetPageSize()
+                            + params.node.rowIndex + 1;
+
+
+                    }
+                    return params.node.rowIndex + 1;
+                }
             },   
         ];
         if (MODEL_NAME === "billinward"){
@@ -612,14 +619,7 @@
 
              
 
-        cols.push({
-            headerName: "ID",
-            field: PRIMARY_KEY,
-            width: 120,
-            editable: params => params.data._isNew === true,
-            pinned: 'left',
-            cellStyle: {backgroundColor: '#f8f9fa', fontweight: 'bold'},
-        });
+        
 
         
          
@@ -816,6 +816,10 @@
                 field: field.name,
                 width: field.width || 220,
                 editable: field.editable,
+            }
+
+            colDef.cellClassRules = {
+                "cell-error": params => !!params.data[field.name + "_error"]
             }
 
             if (field.name === "project_status") {
@@ -1734,30 +1738,78 @@
     }
 
     function handleBackendErrors(row, errors) {
+
+        if (errors.detail) {
+            alert(errors.detail);
+            return;
+        }
+
+        if (errors.non_field_errors) {
+            let msg = errors.non_field_errors;
+            if (Array.isArray(msg)) msg = msg[0];
+            alert(msg);
+            return;
+        }
+
+        let matchedNode = null;
         gridApi.forEachNode(node => {
-            if (node.data === row) {
-                
-                if (errors.amount) {
-                    node.data.amount_error = errors.amount[0];
+            if (node.data === row) matchedNode = node;
 
-                    showCellErrorPopup({
-                        api: gridApi,
-                        node: node,
-                        column: gridApi.getColumn("amount")
-                    }, errors.amount[0]);
-                }
-
-                if (errors.commitment) {
-                    node.data.commitment_error = errors.commitment[0];
-                }
-
-                gridApi.refreshCells({
-                    rowNodes: [node],
-                    force: true
-                });
-            }
         });
+        
+        if (!matchedNode) {
+            
+            const messages = Object.values(errors)
+                .map(v => Array.isArray(v) ? v[0] : v)
+                .join("\n");
+            
+            alert("Errors:\n" + messages);
+            return;
+        }
+
+        Object.keys(matchedNode.data).forEach(key => {
+            if (key.endsWith("_error")) delete matchedNode.data[key];
+        });
+
+        let firstField = null;
+
+        Object.keys(errors).forEach(field => {
+            let message = errors[field];
+
+            if (Array.isArray(message)) message = message[0];
+
+            if (typeof message === "object" && message !== null) {
+                message = message.message || JSON.stringify(message);
+            }
+
+            if (!message) message = "Invalid value";
+
+            matchedNode.data[field + "_error"] = message;
+
+            if (!firstField) firstField = field;
+        });
+
+        gridApi.refreshCells({ rowNodes: [matchedNode], force: true });
+
+        if (firstField) {
+            gridApi.ensureNodeVisible(matchedNode, "middle");
+
+            const col = gridApi.getColumn(firstField);
+            showCellErrorPopup({
+                api:  gridApi,
+                node:  matchedNode,
+                column: col || { getColId: () => firstField }
+            }, matchedNode.data[firstField + "_error"]);
+        }
     }
+
+        
+
+
+    
+
+        
+    
     
     function preparePayload(row) {
         const payload = {};

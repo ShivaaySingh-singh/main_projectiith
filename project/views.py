@@ -464,9 +464,11 @@ class GenericModelAPIView(APIView):
         serializer = Serializer(data=request.data, many=is_many, context={'request': request})
 
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(_current_user=request.user)
             return Response(serializer.data, status=201)
-
+        
+        
+        # added to check something
         return Response(serializer.errors, status=400)
 
 class GenericModelDetailAPIView(APIView):
@@ -534,7 +536,8 @@ class GenericModelDetailAPIView(APIView):
         serializer = Serializer(obj, data=data, partial=True, context={'request': request})
 
         if serializer.is_valid():
-            serializer.save()
+            
+            serializer.save(_current_user=request.user)
             return Response(serializer.data)
 
         return Response(serializer.errors, status=400)
@@ -557,7 +560,9 @@ class GenericModelDetailAPIView(APIView):
         serializer = Serializer(obj,data=data,partial=True, context={'request': request})
 
         if serializer.is_valid():
-            serializer.save()
+
+            
+            serializer.save(_current_user=request.user)
             return Response(serializer.data)
 
         return Response(serializer.errors, status=400)
@@ -846,6 +851,7 @@ def project_balance_sheet(request, short_no):
     }
 
     return render(request, "project_balance_sheet.html", context)
+
 
 
 

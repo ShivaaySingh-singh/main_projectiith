@@ -1,22 +1,49 @@
-# Ignore Python cache files
-*.pyc
+# ------------------------------
+# Python
+# ------------------------------
 __pycache__/
+*.py[cod]
 
-# Ignore virtual environment folders
+# ------------------------------
+# Virtual Environment
+# ------------------------------
 venv/
 env/
-
-# Ignore environment files (API keys, etc.)
 .env
+.env.*
 
+# ------------------------------
+# Django
+# ------------------------------
+db.sqlite3
+*.log
 
-# Ignore IDE/editor folders
+# Static files (generated)
+staticfiles/
+
+# Media files (optional)
+media/
+
+# ------------------------------
+# IDE
+# ------------------------------
 .vscode/
 .idea/
 
-# Optional: ignore logs
-*.log
+# ------------------------------
+# OS files
+# ------------------------------
+.DS_Store
+Thumbs.db
 
-# Optional: ignore migrations (only if you don’t want to track them)
-**/migrations/
-!*/migrations/__init__.py
+# ------------------------------
+# Celery
+# ------------------------------
+celerybeat-schedule
+celerybeat.pid
+
+# ------------------------------
+# Misc
+# ------------------------------
+*.bak
+*.swp

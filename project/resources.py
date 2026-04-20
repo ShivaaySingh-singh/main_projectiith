@@ -1,5 +1,5 @@
 from import_export import resources, fields
-from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment,Payment, ReceiptHead, TDSSection, TDSRate
+from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment,Payment, ReceiptHead, TDSSection, TDSRate, Payee
 from import_export.widgets import DateWidget, ForeignKeyWidget
 from datetime import datetime, date
 import xlrd
@@ -595,3 +595,48 @@ class PaymentResource(resources.ModelResource):
         )
 
         export_order = fields
+
+
+class PayeeResource(resources.ModelResource):
+    payee_type = fields.Field(column_name="Type", attribute="payee_type")
+    name_of_payee = fields.Field(column_name="Name of Payee", attribute="name_of_payee")
+    emp_code = fields.Field(column_name="Emp / Code", attribute="emp_code")
+    designation = fields.Field(column_name="Designation", attribute="designation")
+    department = fields.Field(column_name="Department", attribute="department")
+    pan = fields.Field(column_name="PAN", attribute="pan")
+    gst = fields.Field(column_name="GST", attribute="gst")
+    account_number = fields.Field(column_name="Account Number", attribute="account_number")
+    bank_name = fields.Field(column_name="Bank Name", attribute="bank_name")
+    branch = fields.Field(column_name="Branch", attribute="branch")
+    ifsc = fields.Field(column_name="IFSC / SWIFT", attribute="ifsc")
+    email = fields.Field(column_name="Mail", attribute="email" )
+    contact_no = fields.Field(column_name="Contact No", attribute="contact_no")
+    pfms_code = fields.Field(column_name="PFMS Code", attribute="pfms_code")
+    pfms_name = fields.Field(column_name="PFMS Name", attribute="pfms_name")
+
+
+
+
+     
+
+
+
+    class Meta:
+        model = Payee
+        import_id_fields = ("pan",)
+
+        fields = (
+            "payee_type", "name_of_payee", "emp_code", "designation",
+            "department",
+            "pan",
+            "gst",
+            "account_number",
+            "bank_name",
+            "branch",
+            "ifsc",
+            "email",
+            "contact_no",
+            "pfms_code",
+            "pfms_name,"
+            "is_active",
+        )

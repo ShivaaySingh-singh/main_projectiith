@@ -26,16 +26,17 @@ import json  #  ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant, ReceiptAllocation, ReceiptCategory,
-    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName, AuditLog,
+    Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName, AuditLog,Payee,
+
 )
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
-    TDGGrantResource, ExpenditureResource, CommitmentResource, PaymentResource
+    TDGGrantResource, ExpenditureResource, CommitmentResource, PaymentResource, PayeeResource
 )
 
 from .serializers import CommitmentSerializer
 
-from .payee_resources import PayeeResource
+
 from .utils import send_async, generate_random_password, send_credentials_email
 from django.contrib import messages
 
@@ -1820,6 +1821,9 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
         # Auto TDS calculation
        
         obj._current_user = request.user
+
+       
+
         super().save_model(request, obj, form, change)
 
     def delete_model(self, request, obj):
@@ -2079,7 +2083,7 @@ class ProjectSanctionDistributionAdmin(ExcelViewMixin, admin.ModelAdmin):
 custom_admin_site.register(ProjectSanctionDistribution, ProjectSanctionDistributionAdmin)
 
           
-class PayeeAdmin(ExcelViewMixin, admin.ModelAdmin):
+class PayeeAdmin(ExcelViewMixin, ImportExportModelAdmin):
     resource_class = PayeeResource
     list_diplay = (
         "name_of_payee",

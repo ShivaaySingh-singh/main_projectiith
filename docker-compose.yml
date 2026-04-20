@@ -1,9 +1,30 @@
 version: '3'
 
 services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+
   web:
     build: .
-    ports:
-      - "8000:8000"
+    command: python manage.py runserver 0.0.0.0:8000
+    
     volumes:
       - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  celery:
+    build: .
+    command: celery -A project_portal worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+
+
+    
