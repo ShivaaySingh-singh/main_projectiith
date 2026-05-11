@@ -26,7 +26,7 @@ urlpatterns = [
     path('bill_inwards/', views.inward_bills_view, name='bill_inwards'),
     path("projects/<str:short_no>/balance-sheet/",views.project_balance_sheet, name="project_balance_sheet"),
     
-     
+    path('admin/project/payment/cheque-letter',views.cheque_letter_view, name='payment_cheque_letter'),
 ]
 
 
@@ -35,3 +35,4 @@ urlpatterns = [
 
 
 
+                                                                                

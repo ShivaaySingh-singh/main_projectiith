@@ -334,6 +334,35 @@ body {
                 <div class="no-data-alert">No projects assigned.</div>
             {% endif %}
         </section>
+
+        {% if copi_projects %}
+        <section class="mb-5">
+            <h4 class="section-heading">
+                Projects as Co-PI
+                <span style="font-size:13px; color:#6c757d;"></span>
+            </h4>
+            <div class="project-list">
+                {% for project in copi_projects %}
+                <div class="project-row" style="border-left: 4px solid #adb5bd;">
+                    <div class="project-title">
+                        <h6>{{ project.project_title }}</h6>
+                        <small class="text-muted">PI: {{ project.pi_name }}</small>
+                    </div>
+                    <div class="project-number">
+                        <span class="project-badge">{{ project.project_no }}</span>
+                    </div>
+                    <div class="project-action">
+                        <a href="{% url 'project_balance_sheet' project.project_short_no %}" 
+                       class="btn-view">View Details</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        </section>
+    
+
         {% endif %}
 
         <!-- ✅ Seed Grant Detail Section -->
@@ -363,7 +392,33 @@ body {
                 <div class="no-data-alert">No seed grants assigned.</div>
             {% endif %}
         </section>
-        {% endif %}
+        {% if copi_seeds %}
+    <section class="mb-5">
+        <h4 class="section-heading">
+            Seed Grants as Co-PI
+            <span style="font-size:13px; color:#6c757d;">(View Only)</span>
+        </h4>
+        <div class="project-list">
+            {% for grant in copi_seeds %}
+            <div class="project-row" style="border-left: 4px solid #adb5bd;">
+                <div class="project-title">
+                    <h6>{{ grant.title }}</h6>
+                    <small class="text-muted">PI: {{ grant.pi_name }}</small>
+                </div>
+                <div class="project-number">
+                    <span class="project-badge">{{ grant.grant_no }}</span>
+                </div>
+                <div class="project-action">
+                    <a href="{% url 'bill_report_user' grant.encoded_grant_no %}" 
+                       class="btn-view">View Report</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+{% endif %}
 
         <!-- ✅ TDG Grant Detail Section -->
         {% if show_tdg %}
@@ -392,7 +447,33 @@ body {
                 <div class="no-data-alert">No TDG grants assigned.</div>
             {% endif %}
         </section>
-        {% endif %}
+        {% if copi_tdgs %}
+    <section>
+        <h4 class="section-heading">
+            TDG Grants as Co-PI
+            <span style="font-size:13px; color:#6c757d;">(View Only)</span>
+        </h4>
+        <div class="project-list">
+            {% for tdg in copi_tdgs %}
+            <div class="project-row" style="border-left: 4px solid #adb5bd;">
+                <div class="project-title">
+                    <h6>{{ tdg.title }}</h6>
+                    <small class="text-muted">PI: {{ tdg.pi_name }}</small>
+                </div>
+                <div class="project-number">
+                    <span class="project-badge">{{ tdg.grant_no }}</span>
+                </div>
+                <div class="project-action">
+                    <a href="{% url 'bill_report_user' tdg.encoded_grant_no %}" 
+                       class="btn-view">View Report</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+{% endif %}
     </main>
 </div>
 

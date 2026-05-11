@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.urls import path
 from django.template.response import TemplateResponse
 from import_export.admin import ImportExportModelAdmin
-from .views import bill_report_admin
+from .views import bill_report_admin, cheque_letter_view
 from django import forms
 from .models import CustomUser, Faculty
 from django.contrib.auth.models import Group
@@ -22,6 +22,8 @@ from django.db.models.functions import Coalesce
 from django.db.models import DecimalField
 from django.db.models import ExpressionWrapper
 from .forms import ReceiptForm
+from django.urls import path, reverse
+from django.utils.html import format_html
 import json  #  ADD THIS - needed for JSON encoding
 from .models import models
 from .models import (
@@ -29,6 +31,8 @@ from .models import (
     Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName, AuditLog,Payee,
 
 )
+
+
 from .resources import (
     ProjectResource, ReceiptResource, SeedGrantResource,
     TDGGrantResource, ExpenditureResource, CommitmentResource, PaymentResource, PayeeResource
@@ -159,6 +163,8 @@ class ExcelViewMixin:
             'has_add_permission': self.has_add_permission(request),
             'has_change_permission': self.has_change_permission(request),
             'has_delete_permission': self.has_delete_permission(request),
+            'site_header': self.admin_site.site_header,
+            'site_title': self.admin_site.site_title,
         }
         
         return render(request, 'admin/generic_excel_view.html', context)
@@ -715,11 +721,16 @@ class ProjectAdmin(ExcelViewMixin, ImportExportModelAdmin):
         if hasattr(self, "_current_request"):
             is_superuser = self._current_request.user.is_superuser
 
-        for field in fields:
-            if field["name"] == "co_pi_name":
-                field["dropdown"] = "copis"
-                field["valueField"] = "id"
-                field["labelField"] = "label"
+        
+        fields = [f for f in fields if f["name"] != "co_pi_name"]
+
+        fields.append({
+            "name": "co_pi_display",
+            "label": "Co-PI Name(s)",
+            "type": "CharField",
+            "editable": False,
+            "width": 250,
+        })
 
         for field in fields:
 
@@ -747,26 +758,22 @@ class ProjectAdmin(ExcelViewMixin, ImportExportModelAdmin):
         return fields
 
     def get_excel_context_data(self):
+        from collections import defaultdict
+        copi_map = defaultdict(list)
+        for c in CoPiName.objects.filter(project__isnull=False).select_related('project'):
+            copi_map[c.project_id].append(c.name)
+
         return {
             "faculties": list(
-                Faculty.objects.values(
-                    "faculty_id", "pi_name", "department"
-                )
+                Faculty.objects.values("faculty_id", "pi_name", "department")
             ),
-
-            "copis": [
-                {
-                    "id": c.id,
-                    "label": f"{c.name} ({c.faculty_id})"
-                }
-
-                for c in CoPiName.objects.all()
-
-            ]
+            "copi_map": dict(copi_map),
         }
+        
+        
     def save_model(self, request, obj, form, change):
         if obj.is_extended and obj.extension_approved_by is None:
-            obj.extension_approved_by = request.user
+            obj.extension_approved_by = request.user 
         super().save_model(request, obj, form, change)
 
     
@@ -1645,7 +1652,7 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
             
                 field["editable"] = False   
 
-            if field["name"] in ["pi_name", "pi_email"]:
+            if field["name"] in ["pi_name", "pi_email", ]:
                 field["editable"] = False
                 field["width"] = 220
 
@@ -1760,19 +1767,14 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
         return context
     
     def get_short_no(self, obj):
-        funding = obj.funding_obj
+        if obj.project:
+            return obj.project.project_short_no
+        elif obj.seed_grant:
+            return obj.seed_grant.short_no
+        elif obj.tdg_grant:
+            return obj.tdg_grant.short_no
 
-        if not funding:
-            return "_"
         
-        if obj.funding_type == "PROJECT":
-            return funding.project_short_no
-        
-        elif obj.funding_type == "SEED":
-            return funding.short_no
-        
-        elif obj.funding_type == "TDG":
-            return funding.short_no
         
         return "_"
     
@@ -1829,6 +1831,20 @@ class PaymentAdmin(ExcelViewMixin, ImportExportModelAdmin):
     def delete_model(self, request, obj):
         obj._current_user = request.user
         super().delete_model(request, obj)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path('cheque-letter/', self.admin_site.admin_view(cheque_letter_view), name='payment_cheque_letter'),
+
+        ]
+        return custom + urls
+    
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['cheque_letter_url'] = reverse('admin:payment_cheque_letter')
+        return super().changelist_view(request, extra_context)
+    
 
 
     
@@ -1974,8 +1990,17 @@ class PaymentTypeAdmin(admin.ModelAdmin):
     search_fields = ("name",)
 
 class CoPiNameAdmin(admin.ModelAdmin):
-    list_display = ("faculty_id", "name")
-    search_fields = ("name",)
+    list_display = ('get_faculty_id', 'name', 'email', 'project', 'seed_grant', 'tdg_grant')
+    search_fields = ['faculty__faculty_id', 'name']
+    autocomplete_fields = ['faculty','project', 'seed_grant', 'tdg_grant']
+
+    def get_faculty_id(self, obj):
+        return obj.faculty.faculty_id if obj.faculty else "-"
+    get_faculty_id.short_description = "Faculty ID"
+
+    def get_faculty_name(self, obj):
+        return obj.faculty.pi_name if obj.faculty else "-"
+    get_faculty_name.short_description = "Faculty Name"
     
 class BankAdmin(admin.ModelAdmin):
     list_display = (
@@ -2145,5 +2170,7 @@ class AuditLogAdmin(ExcelViewMixin, admin.ModelAdmin):
     formatted_changes.short_description = "Changes"
 
 custom_admin_site.register(AuditLog, AuditLogAdmin)  
+
+
 
 

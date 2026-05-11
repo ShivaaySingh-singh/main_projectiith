@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponseRedirect, JsonResponse
 from django.core.serializers.json import DjangoJSONEncoder
-from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment, ProjectSanctionDistribution,Payee,ReceiptHead, ReceiptAllocation
+from .models import Faculty, Project, Receipt, SeedGrant, TDGGrant, Expenditure, Commitment, FundRequest, BillInward, Payment, ProjectSanctionDistribution,Payee,ReceiptHead, ReceiptAllocation, Bank
 from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
 import re
@@ -20,6 +20,9 @@ from collections import defaultdict
 from decimal import Decimal
 from django.http import HttpResponse
 from .forms import ReceiptForm
+from datetime import date
+from django.contrib.admin.views.decorators import staff_member_required
+
 
 import json
 from django.core.exceptions import ValidationError
@@ -121,12 +124,12 @@ def save_fund_management(request):
 
 @login_required
 def dashboard(request):
+    
+
     faculty = get_object_or_404(Faculty, user=request.user)
 
-    # --- OLD SYSTEM ---
     projects = Project.objects.filter(faculty_id=faculty.faculty_id)
 
-    # --- NEW SYSTEM (Seed + TDG) ---
 
 
     seed_projects = SeedGrant.objects.filter(faculty_id=faculty.faculty_id)
@@ -154,6 +157,18 @@ def dashboard(request):
         show_projects = False
         show_seed = False
         show_tdg = True  # ✅ default: show everything
+    
+    copi_projects = Project.objects.filter(
+        co_pis__faculty=faculty.faculty_id
+    )
+
+    copi_seeds = SeedGrant.objects.filter(
+        co_pis__faculty=faculty.faculty_id
+    )
+
+    copi_tdgs = TDGGrant.objects.filter(
+        co_pis__faculty=faculty.faculty_id
+    )
 
     return render(request, "dashboard.html", {
         "faculty": faculty,
@@ -164,6 +179,9 @@ def dashboard(request):
         "show_projects": show_projects,
         "show_seed": show_seed,
         "show_tdg": show_tdg,
+        "copi_projects": copi_projects,
+        "copi_seeds": copi_seeds,
+        "copi_tdgs": copi_tdgs,
     })
 
 
@@ -431,24 +449,168 @@ class GenericModelAPIView(APIView):
         Model, Serializer = self.get_model_and_serializer(model_name)
         if not Model:
             return Response({"error": "Invalid model"}, status=400)
+        
+        SELECT_RELATED_MAP = {
+            'expenditure':              ['seed_grant', 'tdg_grant', 'project'],
+            'commitment':               ['seed_grant', 'tdg_grant', 'project'],
+            'receipt':                  ['seed_grant', 'tdg_grant', 'project'],
+            'payment':                  ['seed_grant', 'tdg_grant', 'project'],
+            'billinward':               ['faculty', 'whom_to'],
+            'projectsanctiondistribution': ['project'],
+        }
 
-        if model_name.lower() in ['expenditure', 'commitment']:
-            queryset = Model.objects.select_related('seed_grant', 'tdg_grant').all()
+        related = SELECT_RELATED_MAP.get(model_name.lower(), [])
+        queryset = Model.objects.select_related(*related).all() if related else Model.objects.all()
 
-        elif model_name.lower() == 'billinward':
-            queryset = Model.objects.select_related('faculty', 'whom_to').all()
-
+        if model_name.lower() == 'billinward':
             if not request.user.is_superuser:
                 if getattr(request.user, 'role', None) == 'admin':
                     queryset = queryset.filter(whom_to=request.user)
                 else:
                     queryset = queryset.none()
 
-        else:
-            queryset = Model.objects.all()
+        queryset = self.apply_search_filters(request, model_name, queryset)
 
         serializer = Serializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
+    
+    def apply_search_filters(self, request, model_name, queryset):
+        model_lower = model_name.lower()
+
+        search_q = request.query_params.get('search', '').strip()
+        date_from = request.query_params.get('date_from', '').strip()
+        date_to = request.query_params.get('date_to', '').strip()
+
+        MODEL_SEARCH_CONFIG = {
+            'expenditure': {
+                'related': [
+                    'seed_grant__grant_no',
+                    'seed_grant__short_no',
+                    'tdg_grant__grant_no',
+                    'tdg_grant__short_no',
+                    'project__project_no',
+                    'project__project_short_no',
+                ]
+            },
+
+            'commitment': {
+                'related': [
+                    'seed_grant__grant_no',
+                    'seed_grant__short_no',
+                    'tdg_grant__grant_no',
+                    'tdg_grant__short_no',
+                    'project__project_no',
+                    'project__project_short_no',
+
+                ]
+            },
+            'receipt': {
+                'related': [
+                    'seed_grant__grant_no',
+                    'seed_grant__short_no',
+                    'tdg_grant__grant_no',
+                    'tdg_grant__short_no',
+                    'project__project_no',
+                    'project__project_short_no',
+                ]
+            },
+            'payment': {
+                'related': [
+                    'seed_grant__grant_no',
+                    'seed_grant__short_no',
+                    'tdg_grant__grant_no',
+                    'tdg_grant__short_no',
+                    'project__project_no',
+                    'project__project_short_no',
+                ]
+            },
+            'billinward': {
+                'direct': [
+                    'project_no',
+                    'pi_name',
+                    'received_from',
+
+                ]
+            },
+            'projectsanctiondistribution': {
+                'related': [
+                    'project__project_no',
+                    'project__project_short_no',
+                ]
+            },
+            'seedgrant': {
+                'direct': [
+                    'grant_no',
+                    'short_no',
+                    'pi_name',
+                ]
+            },
+            'tdggrant': {
+                'direct': [
+                    'grant_no',
+                    'short_no',
+                    'pi_name',
+                ]
+            },
+            'project': {
+                'direct': [
+                    'project_no',
+                    'project_short_no',
+                    'pi_name',
+                ]
+            },
+            'payee': {
+                'direct': [
+                    'name_of_payee',
+                    'pan',
+                    'emp_code'
+                ]
+            },
+
+
+        }
+
+        if search_q:
+            config = MODEL_SEARCH_CONFIG.get(model_lower, {})
+            direct_fields = config.get('direct', [])
+            related_fields = config.get('related', [])
+
+            if direct_fields or related_fields:
+                q_obj = Q()
+                for field in direct_fields:
+                    q_obj |= Q(**{f'{field}__icontains': search_q})
+                for field in related_fields:
+                    q_obj |= Q(**{f'{field}__icontains': search_q})
+                queryset = queryset.filter(q_obj)
+
+        DATE_FIELD_MAP = {
+            'expenditure':  'bill_date',
+            'commitment':   'bill_date',
+            'receipt':      'receipt_date',
+            'payment':      'bill_date',
+            'billinward':   'date',
+            'seedgrant':    'sanction_date',
+            'tdggrant':     'sanction_date',
+            'project':      'project_start_date',
+
+        }
+
+        date_field = DATE_FIELD_MAP.get(model_lower)
+        if date_field:
+            if date_from:
+                try:
+                    queryset = queryset.filter(**{f'{date_field}__gte': date_from})
+                except Exception:
+                    pass
+
+            if date_to:
+                try:
+                    queryset = queryset.filter(**{f'{date_field}__lte': date_to})
+                except Exception:
+                    pass
+
+        return queryset
+                    
 
     def post(self, request, model_name):
 
@@ -464,12 +626,12 @@ class GenericModelAPIView(APIView):
         serializer = Serializer(data=request.data, many=is_many, context={'request': request})
 
         if serializer.is_valid():
-            serializer.save(_current_user=request.user)
+            serializer.save()
             return Response(serializer.data, status=201)
         
         
         # added to check something
-        return Response(serializer.errors, status=400)
+        return Response(serializer.errors, status=400)  
 
 class GenericModelDetailAPIView(APIView):
     """Generic API for GET one, PUT update, DELETE"""
@@ -537,7 +699,7 @@ class GenericModelDetailAPIView(APIView):
 
         if serializer.is_valid():
             
-            serializer.save(_current_user=request.user)
+            serializer.save()
             return Response(serializer.data)
 
         return Response(serializer.errors, status=400)
@@ -562,7 +724,7 @@ class GenericModelDetailAPIView(APIView):
         if serializer.is_valid():
 
             
-            serializer.save(_current_user=request.user)
+            serializer.save()
             return Response(serializer.data)
 
         return Response(serializer.errors, status=400)
@@ -851,6 +1013,67 @@ def project_balance_sheet(request, short_no):
     }
 
     return render(request, "project_balance_sheet.html", context)
+
+@staff_member_required
+def cheque_letter_view(request):
+    
+    banks = Bank.objects.filter(is_active=True).order_by('bank_name')
+
+    payments = []
+    selected_bank = None
+    selected_cheque_no = None
+    total_amount = 0
+    bank_account_no = ''
+
+    if request.method == 'GET' and request.GET.get('bank'):
+        bank_id = request.GET.get('bank', '').strip()
+        cheque_no = request.GET.get('cheque_no', '').strip()
+
+        
+
+        if bank_id and cheque_no:
+            try:
+                selected_bank = Bank.objects.get(id=bank_id)
+                bank_account_no = selected_bank.account_no or ''
+
+                
+
+                payments = Payment.objects.select_related(
+                    'payee', 'head', 'bank', 'seed_grant', 'tdg_grant', 'project'
+                
+                ).filter(
+                    bank_id=bank_id,
+                    cheque_no=cheque_no,
+
+                ).order_by('id')
+
+               
+
+
+                total_amount = sum(p.net_amount or 0 for p in payments)
+                selected_cheque_no = cheque_no
+
+            except Bank.DoesNotExist:
+                pass
+    context = {
+        'banks':     banks,
+        'payments':  payments,
+        'selected_bank': selected_bank,
+        'selected_cheque_no': selected_cheque_no,
+        'total_amount':  total_amount,
+        'bank_account_no':  bank_account_no,
+        'today':            date.today().strftime('%d-%b-%Y'),
+        'title':       'Cheque Letter',
+        'has_permission': True,
+
+        'site_header': 'IIT Hyderabad (SRC) - Admin Panel',
+        'site_title': 'IIT Hyderabad SRC Admin',
+        'site_url': '/admin/',
+
+    }
+
+    return render(request, 'admin/cheque_letter.html', context )
+
 
 
 

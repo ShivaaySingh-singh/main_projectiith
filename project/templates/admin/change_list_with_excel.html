@@ -17,6 +17,24 @@
             📊 Excel View
         </a>
     </li>
+
+    {% if opts.model_name == 'payment' %}
+    <li>
+        <a href="/admin/project/payment/cheque-letter/"
+           class="viewlink"
+           style="background: linear-gradient(135deg, #417690 0%, #2e5266 100%);
+                  padding: 10px 20px;
+                  color: white;
+                  text-decoration: none;
+                  border-radius: 6px;
+                  font-weight: 600;
+                  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+                  margin-right:8px;">
+            Cheque Letter
+        </a>
+    </li>
+    {% endif %}
+
 {% endblock %}
 
 {% block extrastyle %}

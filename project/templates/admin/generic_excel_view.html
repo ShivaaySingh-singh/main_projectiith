@@ -927,8 +927,29 @@
 
                     cellEditor: "agSelectCellEditor",
 
-                    cellEditorParams: {
-                        values: window.commitments.map(c => String(c.id))
+                    cellEditorParams: params => {
+                        const row = params.data;
+
+                        let matchedCommitments = (window.commitments || []);
+
+                        if (row.seed_grant) {
+                            matchedCommitments = matchedCommitments.filter(
+                                c => String(c.seed_grant) === String(row.seed_grant)
+                            );
+
+                        } else if (row.tdg_grant) {
+                            matchedCommitments = matchedCommitments.filter(
+                                c => String(c.tdg_grant) === String(row.tdg_grant)
+                            );
+                        } else if (row.project) {
+                            matchedCommitments = matchedCommitments.filter(
+                                c => String(c.project) === String(row.project)
+                            );
+                        }
+                        return {
+                            values: matchedCommitments.map(c => String(c.id))
+                        };
+                        
                     },
 
                     valueFormatter: params => {
@@ -1561,60 +1582,63 @@
     
     // ✅ NEW: Search Function
     function applySearch() {
-        const searchText = HAS_GRANTS_SELECTOR ? 
-            document.getElementById('searchGrantNo').value.toLowerCase() :
-            document.getElementById('searchProjectNo').value.toLowerCase();
+        const grantEl = document.getElementById('searchGrantNo');
+        const projectEl = document.getElementById('searchProjectNo');
+        const searchText = grantEl
+            ? grantEl.value.trim()
+            : (projectEl ? projectEl.value.trim() : '');
+
         const dateFrom = document.getElementById('searchDateFrom').value;
-        const dateTo = document.getElementById('searchDateTo').value;
-        
-        let filteredData = [...allData];
-        
-        // Filter by grant/project number
-        if (searchText) {
-            filteredData = filteredData.filter(row => {
-                if (HAS_GRANTS_SELECTOR) {
-                    const grantNo = (row.grant_no_display || '').toLowerCase();
-                    const shortNo = (row.seed_grant_short || row.tdg_grant_short || '').toLowerCase();
-                    return grantNo.includes(searchText) || shortNo.includes(searchText);
-                } else {
-                    const projectNo = (row.project_no || '').toLowerCase();
-                    return projectNo.includes(searchText);
-                }
-            });
+        const dateTo   = document.getElementById('searchDateTo').value;
+
+        const params = new URLSearchParams();
+        if (searchText) params.set('search', searchText);
+        if (dateFrom)   params.set('date_from', dateFrom);
+        if (dateTo)     params.set('date_to', dateTo);
+
+        const statusEl = document.getElementById('statusFilter');
+        if (statusEl && statusEl.value) {
+            params.set('status', statusEl.value);
         }
-        
-        // Filter by date range
-        if (dateFrom) {
-            filteredData = filteredData.filter(row => {
-                const rowDate = row.date || '';
-                return rowDate >= dateFrom;
+
+        showLoading(true);
+
+        fetch(`${API_URL}?${params.toString()}`, { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(data => {
+                allData = data;
+                gridApi.setGridOption('rowData', data);
+                updateSummary(data);
+                updateStatus(`Found ${data.length} records`, 'success');
+                showLoading(false);
+
+            })
+            .catch(err => {
+                console.error(err);
+                updateStatus('Search failed', 'error');
+                showLoading(false);
             });
-        }
-        
-        if (dateTo) {
-            filteredData = filteredData.filter(row => {
-                const rowDate = row.date || '';
-                return rowDate <= dateTo;
-            });
-        }
-        
-        gridApi.setGridOption('rowData', filteredData);
-        updateStatus(` Found ${filteredData.length} records`, 'success');
     }
-    
-    // ✅ NEW: Clear Search
+
+    function applySttausFilter() {
+        applySearch();
+    }
+
     function clearSearch() {
-        if (HAS_GRANTS) {
-            document.getElementById('searchGrantNo').value = '';
-        } else {
-            document.getElementById('searchProjectNo').value = '';
-        }
+        const grantEl = document.getElementById('searchGrantNo');
+        const projectEl = document.getElementById('searchProjectNo');
+        if (grantEl) grantEl.value = '';
+        if (projectEl) projectEl.value = '';
         document.getElementById('searchDateFrom').value = '';
         document.getElementById('searchDateTo').value = '';
-        
-        gridApi.setGridOption('rowData', allData);
-        updateStatus(` Showing all ${allData.length} records`, 'success');
+        loadData();
     }
+
+
+
+
+
+    
     
     function addNewRow() {
         const newRow = {};
@@ -1844,6 +1868,7 @@
              "extended_end_date",
              "extension_reason",
              "extension_approved_by",
+             "cheque_no",
         
         ];
         
@@ -1930,7 +1955,7 @@
     function refreshData() {
         modifiedRows.clear();
         clearSearch();
-        loadData();
+       
     }
 
     function calculateGST(row) {

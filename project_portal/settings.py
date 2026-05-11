@@ -60,6 +60,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'project.middleware.CurrentUserMiddleware',
 ]
 
 ROOT_URLCONF = 'project_portal.urls'
@@ -242,3 +243,5 @@ LOGGING = {
 CELERY_BROKER_URL = 'redis://redis:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json' 
+
+DEFAULT_CC_EMAIL = "office.src@iith.ac.in"

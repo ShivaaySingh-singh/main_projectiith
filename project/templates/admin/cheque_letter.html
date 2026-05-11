@@ -1,0 +1,610 @@
+{% extends "admin/base_site.html" %}
+{% load i18n%}
+
+{% block extrastyle %}
+{{ block.super}}
+<style>
+    .cl-wrapper {
+        max-width: 1100px;
+        margin: 30px auto;
+        font-family: Arial, sans-serif;
+    }
+
+    .cl-search-card {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 20px 30px;
+        margin-bottom: 30px;
+        display: flex;
+        gap: 20px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+    }
+
+    .cl-field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 220px;
+
+    }
+
+    .cl-field label {
+        font-weight: 700;
+        font-size: 13px;
+        color: #333;
+    }
+
+    .cl-field select,
+    .cl-field input {
+        padding: 8px 12px;
+        border: 2px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+        min-width: 220px;
+    }
+
+    .cl-field select:focus,
+    .cl-field input:focus {
+        outline: none;
+        border-color: #417690;
+    }
+
+    .btn-generate {
+        background: #417690;
+        color: white;
+        padding: 9px 22px;
+        border: none;
+        border-radius: 4px;
+        font_weight: 700;
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+    .btn-generate:hover { background: #2e5266; }
+
+    .btn-print {
+        background: #28a745;
+        color: white;
+        padding: 9px 22px;
+        border: none;
+        border-radius: 4px;
+        font-weight: 700;
+        font-size: 14px;
+        cursor: pointer;
+        margin-left: 10px;
+
+    }
+
+    .btn-print:hover { background: #1e7e34; }
+
+    /* ── Letter area ── */
+    .cl-letter {
+        background: white;
+        border: 1px solid #ccc;
+        padding: 40px 50px;
+        font-size: 13px;
+        line-height: 1.6;
+    }
+
+    /* ── Top right meta box (Cheque No, Bank, Vch) ── */
+    .cl-meta-table {
+        float: right;
+        border-collapse: collapse;
+        margin-bottom: 10px;
+    }
+
+    .cl-meta-table td {
+        border: 1px solid #333;
+        padding: 4px 10px;
+        font-size: 13px;
+    }
+
+    .cl-meta-table td:first-child {
+        background: #b8cce4;
+        font-weight: 700;
+        min-width: 120px;
+    }
+
+    .cl-meta-table td:last-child {
+        min-width: 160px;
+    }
+
+    /* ── Header with logo + institute name ── */
+    .cl-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        overflow: hidden; /* clear float */
+    }
+
+    .cl-header-logo img {
+        height: 90px;
+        width: auto;
+    }
+
+    .cl-header-title {
+        text-align: center;
+        flex: 1;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.5;
+    }
+
+    /* ── Ref + Date line ── */
+    .cl-ref-line {
+        display: flex;
+        justify-content: flex-end;
+        gap: 40px;
+        margin: 10px 0 15px 0;
+        font-size: 13px;
+    }
+
+    /* ── Body text ── */
+    .cl-body { margin: 15px 0; }
+
+    .cl-amount-bold {
+        font-weight: 900;
+        text-decoration: underline;
+        font-size: 15px;
+    }
+
+    .cl-account-bold {
+        font-weight: 900;
+        text-decoration: underline;
+    }
+
+    /* ── Main payment table ── */
+    .cl-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+        font-size: 12px;
+    }
+
+    .cl-table th {
+        border: 1px solid #333;
+        padding: 6px 8px;
+        background: #f2f2f2;
+        text-align: center;
+        font-weight: 700;
+    }
+
+    .cl-table td {
+        border: 1px solid #333;
+        padding: 5px 8px;
+        text-align: center;
+        vertical-align: middle;
+    }
+
+    .cl-table td.left { text-align: left; }
+
+    .cl-table tr.total-row td {
+        font-weight: 700;
+        background: #f9f9f9;
+    }
+
+    /* ── Signature ── */
+    .cl-signature {
+        text-align: right;
+        margin-top: 40px;
+        font-weight: 700;
+        font-size: 13px;
+    }
+    
+    @media print {
+    /* ✅ Admin ka poora layout hide karo */
+    #header,
+    #nav-sidebar,
+    .breadcrumbs,
+    #toolbar,
+    #content-main > *:not(#printArea),
+    .cl-search-card,
+    .cl-no-print,
+    #footer {
+        display: none !important;
+    }
+
+    /* ✅ Sirf letter dikhao */
+    body, html {
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    #printArea {
+        display: block !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        padding: 20px;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    .cl-wrapper {
+        margin: 0 !important;
+        max-width: 100% !important;
+    }
+
+    .cl-letter {
+        border: none !important;
+        padding: 15px !important;
+        box-shadow: none !important;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cl-wrapper">
+    <div class="cl-search-card cl-no-print">
+        <form method="GET" style="display:flex; gap:20px; align-items:flex-end; flex-wrap:wrap;">
+
+            <div class="cl-field">
+                <label>Bank</label>
+                <select name="bank" required>
+                    <option value=""> --Select Bank --</option>
+                    {% for bank in banks %}
+                    <option value="{{bank.id}}"
+                        {% if selected_bank and selected_bank.id == bank.id %}selected{% endif %}>
+                        {{ bank.bank_name }}  ({{ bank.short_no }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="cl-field">
+                <label>Cheque No.</label>
+                <input type="text"
+                       name="cheque_no"
+                       placeholder="Enter cheque number"
+                       value="{{ selected_cheque_no|default:'' }}">
+            </div>
+
+            <button type="submit" class="btn-generate">Generate Letter</button>
+
+            {% if payments %}
+            <button type="button" class="btn-print" onclick="printLetter()">
+                Print Letter
+            </button>
+            {% endif %}
+        </form>
+    </div>
+
+    {% if payments %}
+<div class="cl-letter" id="letterArea" id="printArea">
+
+    <!-- ── Header Row: Logo | Title | Meta ── -->
+    <div style="display:flex; align-items:flex-start; 
+                justify-content:space-between; margin-bottom:20px;">
+
+        <!-- Logo -->
+        <div style="flex:0 0 100px;">
+            <img src="/static/images/iith logo.jpg" 
+                 alt="IITH Logo" style="height:120px; width:auto;">
+        </div>
+
+        <!-- Institute Title — Centre -->
+        <div style="flex:1; text-align:center; padding:0 20px;">
+            <div style="font-size:17px; font-weight:800; line-height:1.8;">
+                Indian Institute of Technology, Hyderabad
+            </div>
+            <div style="font-size:14px; font-weight:600; line-height:1.7;">
+                Kandi, Sangareddy - 502284
+            </div>
+            <div style="font-size:14px; font-weight:600; line-height:1.7;">
+                Telangana, India
+            </div>
+        </div>
+
+        <!-- Meta Table — Right -->
+        <div style="flex:0 0 260px;">
+            <table style="border-collapse:collapse; width:100%;">
+                <tr>
+                    <td style="border:1px solid #333; padding:6px 10px;
+                               background:#b8cce4; font-weight:700; font-size:13px;
+                               width:110px;">Cheque No.</td>
+                    <td style="border:1px solid #333; padding:6px 10px;
+                               font-size:13px; font-weight:600;">
+                        {{ selected_cheque_no }}
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border:1px solid #333; padding:6px 10px;
+                               background:#b8cce4; font-weight:700; font-size:13px;">
+                        Bank
+                    </td>
+                    <td style="border:1px solid #333; padding:6px 10px;
+                               font-size:13px; font-weight:600;">
+                        {{ selected_bank.short_no }}
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border:1px solid #333; padding:6px 10px;
+                               background:#b8cce4; font-weight:700; font-size:13px;">
+                        Vch. No. from
+                    </td>
+                    <td style="border:1px solid #333; padding:6px 10px;">
+                        &nbsp;
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Ref + Date -->
+    <div style="display:flex; justify-content:flex-end; gap:50px;
+                margin:5px 0 20px 0; font-size:13px; font-weight:600;">
+        <span>IITH/R&amp;D</span>
+        <span>Date: <strong>{{ today }}</strong></span>
+    </div>
+
+    <!-- Address -->
+    <div class="cl-body">
+        To<br>
+        The Branch Manager<br>
+        <strong>{{ selected_bank.bank_name }}</strong><br>
+        IIT Kandi<br>
+        Medak Dist - 502284
+    </div>
+
+    <div class="cl-body">Dear Sir,</div>
+
+    <!-- Amount line -->
+    <div class="cl-body">
+        This is to request you to transfer a sum of Rs.
+        <span class="cl-amount-bold">{{ total_amount }}</span>
+    </div>
+
+    <!-- Account line -->
+    <div class="cl-body">
+        <span style="text-decoration:underline; font-weight:700;">
+            from Account Number:
+        </span>
+        &nbsp;&nbsp;
+        <span class="cl-account-bold">{{ bank_account_no }}</span>
+        &nbsp;&nbsp;
+        of IIT Hyderabad R&amp;D to their account as per the details given below.
+    </div>
+
+    <!-- ── Payment Table ── -->
+    <table style="width:100%; border-collapse:collapse; 
+                  margin-top:18px; font-size:12px;">
+        <thead>
+            <tr style="background:#f2f2f2;">
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; width:45px;">
+                    S No
+                </th>
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; min-width:140px;">
+                    Name
+                </th>
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; min-width:120px;">
+                    Bank
+                </th>
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; min-width:110px;">
+                    Account No.
+                </th>
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; width:80px;">
+                    Cheque No
+                </th>
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; width:95px;">
+                    IFSC Code
+                </th>
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; width:60px;">
+                    PV. No.
+                </th>
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; width:100px;">
+                    Amount (in Rs.)
+                </th>
+                <th style="border:1px solid #333; padding:8px 6px; 
+                           font-weight:800; text-align:center; min-width:100px;">
+                    Purpose
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in payments %}
+            <tr>
+                <td style="border:1px solid #333; padding:6px 6px; 
+                           text-align:center;">
+                    {{ forloop.counter }}
+                </td>
+                <td style="border:1px solid #333; padding:6px 8px; 
+                           text-align:left;">
+                    {% if p.payee %}{{ p.payee.name_of_payee }}{% else %}—{% endif %}
+                </td>
+                <td style="border:1px solid #333; padding:6px 8px; 
+                           text-align:left;">
+                    {{ p.payee_bank_name|default:"—" }}
+                </td>
+                <td style="border:1px solid #333; padding:6px 8px; 
+                           text-align:center;">
+                    {{ p.payee_account_no|default:"—" }}
+                </td>
+                <td style="border:1px solid #333; padding:6px 8px; 
+                           text-align:center;">
+                    {{ selected_cheque_no }}
+                </td>
+                <td style="border:1px solid #333; padding:6px 8px; 
+                           text-align:center;">
+                    {{ p.payee_ifsc|default:"—" }}
+                </td>
+                <td style="border:1px solid #333; padding:6px 8px; 
+                           text-align:center;">
+                </td>
+                <td style="border:1px solid #333; padding:6px 8px; 
+                           text-align:right; font-weight:600;">
+                    {{ p.net_amount|default:"0" }}
+                </td>
+                <td style="border:1px solid #333; padding:6px 8px; 
+                           text-align:left;">
+                    {% if p.head %}{{ p.head.name }}{% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            {# ✅ Extra empty rows NAHI — sirf actual data #}
+        </tbody>
+
+        <!-- Total -->
+        <tfoot>
+            <tr style="background:#f9f9f9;">
+                <td colspan="7" 
+                    style="border:1px solid #333; padding:8px 10px;
+                           text-align:right; font-weight:800; font-size:13px;">
+                    Total
+                </td>
+                <td style="border:1px solid #333; padding:8px 8px;
+                           text-align:right; font-weight:800; font-size:13px;">
+                    {{ total_amount }}
+                </td>
+                <td style="border:1px solid #333; padding:8px 8px;">
+                </td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <!-- Signature -->
+    <div style="text-align:right; margin-top:50px; 
+                font-weight:700; font-size:13px;">
+        Authorised Signatory
+    </div>
+
+</div>
+
+{% elif request.GET.bank %}
+<div style="padding:20px; background:#fff3cd; border:1px solid #ffc107;
+            border-radius:4px; color:#856404; font-weight:600;">
+    No payments found for this Bank + Cheque No. combination.
+</div>
+{% endif %}
+</div>
+<script>
+function printLetter() {
+    const letterContent = document.getElementById('letterArea').innerHTML;
+    
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Cheque Letter - {{ selected_cheque_no }}</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                
+                body {
+                    font-family: Arial, sans-serif;
+                    font-size: 13px;
+                    padding: 25px 35px;
+                    background: white;
+                    color: #000;
+                    line-height: 1.6;
+                }
+
+                /* ── Header layout ── */
+                div[style*="display:flex"] {
+                    display: flex !important;
+                }
+
+                /* ── Meta table (Cheque/Bank/Vch) ── */
+                table {
+                    border-collapse: collapse;
+                    width: 100%;
+                }
+
+                td, th {
+                    border: 1px solid #000 !important;
+                    padding: 6px 8px;
+                }
+
+                th {
+                    background: #f0f0f0 !important;
+                    font-weight: 800 !important;
+                    text-align: center;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+
+                /* Meta table header cells blue background */
+                td[style*="background:#b8cce4"] {
+                    background: #b8cce4 !important;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+
+                /* Total row */
+                tr[style*="background:#f9f9f9"] td {
+                    background: #f9f9f9 !important;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+
+                .cl-body {
+                    margin: 12px 0;
+                    line-height: 1.8;
+                }
+
+                .cl-amount-bold {
+                    font-weight: 900;
+                    text-decoration: underline;
+                    font-size: 15px;
+                }
+
+                .cl-account-bold {
+                    font-weight: 900;
+                    text-decoration: underline;
+                }
+
+                /* Signature */
+                div[style*="text-align:right"][style*="margin-top:50px"] {
+                    text-align: right;
+                    margin-top: 50px;
+                    font-weight: 700;
+                }
+
+                img {
+                    max-height: 120px;
+                    width: auto;
+                }
+
+                @page {
+                    size: A4 landscape;
+                    margin: 12mm 15mm;
+                }
+            </style>
+        </head>
+        <body>
+            ${letterContent}
+        </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
+    
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+    }, 600);
+}
+</script>
+{% endblock %}
+
+        
+
+
+            
+            
+ 

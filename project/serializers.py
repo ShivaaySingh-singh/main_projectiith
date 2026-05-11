@@ -390,6 +390,12 @@ class TDGGrantSerializer(serializers.ModelSerializer):
 class ProjectSerializer(serializers.ModelSerializer):
 
     duration_display = serializers.CharField(read_only=True)
+
+    co_pi_display = serializers.SerializerMethodField()
+
+    def get_co_pi_display(self, obj):
+        names = obj.co_pis.values_list("name", flat=True)
+        return ", ".join(names) if names else ""
     class Meta:
         model = Project
         fields = '__all__'
@@ -644,6 +650,8 @@ class PaymentSerializer(serializers.ModelSerializer):
             "pi_email",
             "payee",
             "bank",
+            "cheque_no",
+            "utr_no",
             "amount",
             "tds_section",
             "tds_rate",
@@ -668,6 +676,8 @@ class PaymentSerializer(serializers.ModelSerializer):
             "sgst_tds",
             "seed_grant_short",
             "tdg_grant_short",
+            "cc_email_default",
+            "payment_status",
 
         ]
         read_only_fields = [

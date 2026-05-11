@@ -26,7 +26,7 @@ Dear Sir / Madam,
 This is to inform you that a payment has been successfully processed.
 
 Project No: {instance.project.project_no}
-Payee Name: {instance.name_of_payee}
+Payee Name: {instance.payee.name_of_payee}
 Net Amount: Rs. {instance.net_amount}
 UTR No: {instance.utr_no}
 Paid Date: {instance.date}

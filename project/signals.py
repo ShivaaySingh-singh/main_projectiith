@@ -5,8 +5,11 @@ from django.core.mail import EmailMessage
 from django.forms.models import model_to_dict
 from .models import AuditLog
 from .tasks import send_payment_email_task
+from .utils import get_current_user
 
 from .models import Payment
+
+user = get_current_user()
 
 @receiver(post_save, sender=Payment)
 def send_payment_email(sender, instance, **kwargs):
@@ -64,6 +67,7 @@ def log_create_update(sender, instance, created, **kwargs):
             user=user,
             model_name=sender.__name__,
             object_id=instance.pk,
+            object_value=get_object_value(instance),
             action="CREATE",
             changes={}
         )
@@ -78,6 +82,7 @@ def log_create_update(sender, instance, created, **kwargs):
                     user=user,
                     model_name=sender.__name__,
                     object_id=instance.pk,
+                    object_value=get_object_value(instance),
                     action="UPDATE",
                     changes=changes
                 )
@@ -92,6 +97,16 @@ def log_delete(sender, instance, **kwargs):
         user=user,
         model_name=sender.__name__,
         object_id=instance.pk,
+        object_value=get_object_value(instance),
         action="DELETE",
         changes={}
     )
+
+def get_object_value(instance):
+    if hasattr(instance, 'short_no'):
+        return instance.short_no
+    elif hasattr(instance, 'project_no'):
+        return instance.project_no
+    elif hasattr(instance, 'grant_no'):
+        return instance.grant_no
+    return str(instance.pk)

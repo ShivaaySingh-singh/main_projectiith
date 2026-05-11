@@ -18,6 +18,8 @@ import random
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from django.db import IntegrityError
 import logging
 logger = logging.getLogger("project_portal")
 
@@ -49,16 +51,7 @@ class Faculty(models.Model):
         verbose_name = "Faculty Detail"
         verbose_name_plural = "Faculty Deatails"
 
-class CoPiName(models.Model):
-    faculty_id = models.CharField(max_length=15, unique=True)
-    name = models.CharField(max_length=150)
-    email= models.EmailField(blank=True, null=True)
 
-    def __str__(self):
-        return f"{self.name} ({self.faculty_id})"
-    class Meta:
-        ordering = ["name"]
-    
 class Project(models.Model):
     GENDER_CHOICES = [
         ('Male', 'Male'),
@@ -81,10 +74,7 @@ class Project(models.Model):
     faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL,
                                 null=True, blank=True, related_name="projects")
     pi_name = models.CharField(max_length=100)
-    co_pi_name = models.ForeignKey(
-        CoPiName,on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="projects_as_copi"
-    )
+    
 
     dept = models.CharField(max_length=100, blank=True, null=True
                             
@@ -568,7 +558,7 @@ class TDGGrant(models.Model):
         if today > effective_end:
             self.project_status = "EXPIRED"
         else:
-            self.projectstatus = "ONGOING"
+            self.project_status = "ONGOING"
         super().save(*args, **kwargs)
 
     def clean(self):
@@ -874,13 +864,23 @@ class Commitment(models.Model):
         
 
         if not self.commitment_code:
-            self.commitment_code = self.generate_commitment_code()
+            for _ in range(10):
+                self.commitment_code = self.generate_commitment_code()
+                try:
+                    super().save(*args, **kwargs)
+                    logger.info(f"Commitment saved | Code: {self.commitment_code}")
+                    return
+                except IntegrityError:
+                    continue
 
+            raise Exception("Could not generate unique Commitment code")
+                
 
+        else:
         
-        super().save(*args, **kwargs)
+            super().save(*args, **kwargs)
 
-        logger.info(f"Commitment saved | Code: {self.commitment_code}")
+            logger.info(f"Commitment saved | Code: {self.commitment_code}")
 
     @property
     def total_paid(self):
@@ -1026,6 +1026,17 @@ class Receipt(models.Model):
         elif self.tdg_grant:
             return self.tdg_grant.short_no
         return None
+    
+    def save(self, *args, **kwargs):
+        if self.receipt_date:
+            year = self.receipt_date.year
+            month = self.receipt_date.month
+
+            if month >= 4:
+                self.financial_year = f"{year}-{str(year+1)[2:]}"
+            else:
+                self.financial_year = f"{year-1}-{str(year)[2:]}"
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.short_no } | {self.total_amount}"
@@ -1083,6 +1094,24 @@ class ProjectSanctionDistribution(models.Model):
 
         if self.project_year and self.project_year < 1:
             raise ValidationError({"project_year": "Project year must be >= 1"})
+        
+        existing_total = ProjectSanctionDistribution.objects.filter(
+            project=self.project
+        ).exclude(id=self.id).aggregate(
+            total=Sum('sanctioned_amount')
+        )['total'] or 0
+
+        new_total = existing_total + self.sanctioned_amount
+
+        if hasattr(self.project, "sancion_amount"):
+            if new_total > self.project.sanction_amount:
+                raise ValidationError({
+                    "Sanctioned_amount": (
+                        f"Total sanction ({new_total}) exceeds project limit"
+                        f"({self.project.sanction_amount})"
+                    )
+                })
+            
     
     
     def save(self, *args, **kwargs):
@@ -1199,15 +1228,15 @@ class Payment(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, null=True, blank=True, related_name="payments")
     
     
-    date = models.DateField()
+    date = models.DateField(default=timezone.now)
 
     bill_date = models.DateField(blank=True, null=True)
     
-    
+    payment_type = models.ForeignKey(PaymentType, on_delete=models.PROTECT,related_name="payments")
     head = models.ForeignKey(ReceiptHead, on_delete=models.PROTECT, related_name="payments")
 
     # Payee Info
-    payment_type = models.ForeignKey(PaymentType, on_delete=models.PROTECT,related_name="payments")
+    
     commitment = models.ForeignKey(Commitment, on_delete=models.PROTECT, null=True, blank=True, related_name="payments")
     payee = models.ForeignKey(Payee, on_delete=models.PROTECT,null =True, blank =True ,related_name="payments")
 
@@ -1264,7 +1293,7 @@ class Payment(models.Model):
 
     payee_email = models.EmailField(blank=True, null=True)
     other_email = models.EmailField(blank=True, null=True)
-    cc_email_default = models.EmailField(blank=True, null=True)
+    cc_email_default = models.EmailField(default=settings.DEFAULT_CC_EMAIL,blank=True, null=True)
     cc_email_po_store = models.EmailField(blank=True, null=True)
 
     payment_status = models.CharField(
@@ -1379,6 +1408,27 @@ class Payment(models.Model):
         if self.commitment:
             if self.commitment.status == "CLOSED":
                 errors["commitment"] = "This commitment is closed."
+
+            funding = self.funding_obj or self.seed_grant or self.tdg_grant or self.project
+
+            if funding:
+                commitment = self.commitment
+
+                if self.seed_grant and commitment.seed_grant != self.seed_grant:
+                    errors["commitment"] = (
+                        f"Commitment {commitment.commitment_code} does not belong "
+                        f"to seed grant {self.seed_grant.short_no}"
+                    )
+                elif self.tdg_grant and commitment.tdg_grant != self.tdg_grant:
+                    errors["commitment"] = (
+                        f"Commitment {commitment.commitment_code} does not belong "
+                        f"to TDG grant {self.tdg_grant.short_no}"
+                    )
+                elif self.project and commitment.project != self.project:
+                    errors["commitment"] = (
+                        f"Commitment {commitment.commitment_code} does not belong"
+                        f"to project {self.project.project_short_no}"
+                    )
  
             total_paid = self.commitment.payments.aggregate(
                 total=Coalesce(Sum("amount"), Decimal("0"))
@@ -1512,7 +1562,7 @@ class AuditLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     model_name = models.CharField(max_length=100)
     object_id = models.CharField(max_length=50)
-
+    object_value = models.CharField(max_length=250, null=True, blank=True)
     action = models.CharField(max_length=10, choices=ACTION_CHOICES)
 
     changes = models.JSONField(null=True, blank=True)
@@ -1521,6 +1571,35 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.model_name} | {self.action} | {self.timestamp}"
+    
+class CoPiName(models.Model):
+    faculty = models.ForeignKey(Faculty, on_delete=models.CASCADE,null = True, related_name='co_pi_assignments')
+    name = models.CharField(max_length=150)
+    email= models.EmailField(blank=True, null=True)
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE,
+                                null=True, blank=True, related_name='co_pis')
+    
+    seed_grant = models.ForeignKey(SeedGrant, on_delete=models.CASCADE,
+                                   null=True, blank=True, related_name='co_pis')
+    
+    tdg_grant = models.ForeignKey(TDGGrant, on_delete=models.CASCADE,
+                                  null=True, blank=True, related_name='co_pis')
+
+    def clean(self):
+        filled = sum(bool(x) for x in [
+            self.project, self.seed_grant, self.tdg_grant
+        ])
+        if filled != 1:
+            raise ValidationError("Select only one.")
+    def __str__(self):
+        grant = self.project or self.seed_grant or self.tdg_grant
+        return f"{self.name} {grant}"
+    
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Co-PI"
+        verbose_name_plural = "Co-PIs"
 
 
 
