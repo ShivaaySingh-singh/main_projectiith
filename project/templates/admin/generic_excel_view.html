@@ -1023,12 +1023,26 @@
                     editable: field.editable,
                     cellEditor: 'agSelectCellEditor',
                     cellEditorParams: {
-                        values: TDS_SECTIONS.map(s => String(s.id))
+                        values: ["", ...TDS_SECTIONS.map(s=> String(s.id))]
                     },
                     valueFormatter: params => {
+                        if (!params.value) return "";
                         const sec = TDS_SECTIONS.find(s => String(s.id) === String(params.value));
                         return sec ? sec.section || sec.code : "";
                     },
+                    valueSetter: params => {
+                        if (!params.newValue || params.newValue === "") {
+                            params.data.tds_section = null;
+                            params.data.tds_rate = null;
+                            trackChange(params.data);
+                            return true;
+                        }
+                        params.data.tds_section = parseInt(params.newValue);
+                        trackChange(params.data);
+                        return true;
+                    },
+
+
                     valueParser: params => parseInt(params.newValue || params.value)
 
                 });
@@ -1043,15 +1057,26 @@
                     editable: field.editable,
                     cellEditor: 'agSelectCellEditor',
                     cellEditorParams: params => {
-                        if (!params.data.tds_section) return { values: [] };
+                        if (!params.data.tds_section) return { values: [""] };
                         const filtered = TDS_RATES.filter(
                             r => Number(r.section_id) === Number(params.data.tds_section)
                         );
-                        return { values: filtered.map(r => String(r.id)) };
+                        return { values: ["", ...filtered.map(r => String(r.id))] };
                     },
                     valueFormatter: params => {
+                        if (!params.value) return "";
                         const rate = TDS_RATES.find(r => String(r.id) === String(params.value));
                         return rate ? rate.percent + "%" : "";
+                    },
+                    valueSetter: params => {
+                        if (!params.newValue || params.newValue === "") {
+                            params.data.tds_rate = null;
+                            trackChange(params.data);
+                            return true;
+                        }
+                        params.data.tds_rate = parseInt(params.newValue);
+                        trackChange(params.data);
+                        return true;
                     },
                     valueParser: params => parseInt(params.newValue || params.value)
                 });

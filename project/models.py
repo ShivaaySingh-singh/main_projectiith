@@ -46,7 +46,7 @@ class Faculty(models.Model):
     
 
     def __str__(self):
-        return self.pi_name
+        return f"{self.faculty_id} - {self.pi_name}"
     class Meta:
         verbose_name = "Faculty Detail"
         verbose_name_plural = "Faculty Deatails"
@@ -1590,7 +1590,7 @@ class CoPiName(models.Model):
         filled = sum(bool(x) for x in [
             self.project, self.seed_grant, self.tdg_grant
         ])
-        if filled != 1:
+        if filled > 1:
             raise ValidationError("Select only one.")
     def __str__(self):
         grant = self.project or self.seed_grant or self.tdg_grant

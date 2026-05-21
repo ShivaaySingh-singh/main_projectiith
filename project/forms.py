@@ -1,5 +1,5 @@
 from django import forms
-from .models import FundRequest, Project, SeedGrant, TDGGrant
+from .models import FundRequest, Project, SeedGrant, TDGGrant, CoPiName
 
 from django import forms
 from .models import FundRequest, Project, SeedGrant, TDGGrant, Receipt
@@ -146,3 +146,76 @@ class ReceiptForm(forms.ModelForm):
             raise forms.ValidationError("Please select a funding source")
 
         return cleaned_data
+    
+
+
+class CoPiNameAdminForm(forms.ModelForm):
+    GRANT_CHOICES = []
+
+    grant_selector = forms.ChoiceField(
+        label="Select Project",
+        required= True
+
+    )
+
+    class Meta:
+        model = CoPiName
+        fields = ['faculty', 'name', 'email', 'grant_selector']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        choices = [("", "---------")]
+
+       
+        for p in Project.objects.all():
+            choices.append((f"project_{p.pk}", f"{p}"))
+
+        
+        for s in SeedGrant.objects.all():
+            choices.append((f"seed_{s.pk}", f"{s}"))
+
+        
+        for t in TDGGrant.objects.all():
+            choices.append((f"tdg_{t.pk}", f"{t}"))
+
+        self.fields['grant_selector'].choices = choices
+
+        
+        if self.instance and self.instance.pk:
+            if self.instance.project:
+                self.fields['grant_selector'].initial = f"project_{self.instance.project.pk}"
+            elif self.instance.seed_grant:
+                self.fields['grant_selector'].initial = f"seed_{self.instance.seed_grant.pk}"
+            elif self.instance.tdg_grant:
+                self.fields['grant_selector'].initial = f"tdg_{self.instance.tdg_grant.pk}"
+
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        selected = cleaned_data.get('grant_selector')
+        if not selected:
+            raise forms.ValidationError("Please select a project")  # ✅ exactly 1 enforce
+        return cleaned_data
+    
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        
+        selected = self.cleaned_data.get('grant_selector')
+
+        # Reset all three first
+        instance.project = None
+        instance.seed_grant = None
+        instance.tdg_grant = None
+
+        # Set only the selected one
+        if selected.startswith("project_"):
+            instance.project = Project.objects.get(pk=selected.split("_")[1])
+        elif selected.startswith("seed_"):
+            instance.seed_grant = SeedGrant.objects.get(pk=selected.split("_")[1])
+        elif selected.startswith("tdg_"):
+            instance.tdg_grant = TDGGrant.objects.get(pk=selected.split("_")[1])
+
+        if commit:
+            instance.save()
+        return instance

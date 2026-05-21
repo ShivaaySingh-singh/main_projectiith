@@ -26,6 +26,7 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 import json  #  ADD THIS - needed for JSON encoding
 from .models import models
+from .forms import CoPiNameAdminForm
 from .models import (
     Faculty, Project, Receipt, SeedGrant, TDGGrant, ReceiptAllocation, ReceiptCategory,
     Expenditure, Commitment, CustomUser, FundRequest, BillInward, TDSSection, TDSRate, Payment, ReceiptHead,ProjectSanctionDistribution,Payee,PaymentType,Bank,CoPiName, AuditLog,Payee,
@@ -1990,17 +1991,27 @@ class PaymentTypeAdmin(admin.ModelAdmin):
     search_fields = ("name",)
 
 class CoPiNameAdmin(admin.ModelAdmin):
-    list_display = ('get_faculty_id', 'name', 'email', 'project', 'seed_grant', 'tdg_grant')
+    form = CoPiNameAdminForm
+    list_display = ('get_faculty_id', 'name', 'email', 'get_associated_grant')
     search_fields = ['faculty__faculty_id', 'name']
-    autocomplete_fields = ['faculty','project', 'seed_grant', 'tdg_grant']
+    autocomplete_fields = ['faculty']
+    list_select_related = ['faculty', 'project', 'seed_grant', 'tdg_grant']
 
     def get_faculty_id(self, obj):
         return obj.faculty.faculty_id if obj.faculty else "-"
     get_faculty_id.short_description = "Faculty ID"
 
-    def get_faculty_name(self, obj):
-        return obj.faculty.pi_name if obj.faculty else "-"
-    get_faculty_name.short_description = "Faculty Name"
+    def get_associated_grant(self, obj):
+        grants = []
+        if obj.project:
+            grants.append(f"{obj.project}")
+        if obj.seed_grant:
+            grants.append(f"{obj.seed_grant}")
+        if obj.tdg_grant:
+            grants.append(f"{obj.tdg_grant}")
+        return " | ".join(grants) if grants else "-"
+    
+    get_associated_grant.short_description = "Assosiated Projects"
     
 class BankAdmin(admin.ModelAdmin):
     list_display = (
