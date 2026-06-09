@@ -1552,7 +1552,12 @@
         showLoading(true);
         fetch(API_URL, { credentials: "same-origin"})
             .then(response => response.json())
-            .then(data => {
+            .then(response => {
+
+                const data = response.results !== undefined
+                    ? response.results
+                    : response;
+
                 data.forEach(row => {
                     FIELDS_CONFIG.forEach(f => {
                         if (f.type === "ForeignKey") {
@@ -1562,6 +1567,8 @@
                         }
                     });
                 });
+            
+            
 
                 if (MODEL_NAME === "projectsanctiondistribution") {
                     data.forEach(row => {
@@ -1621,6 +1628,9 @@
         if (dateFrom)   params.set('date_from', dateFrom);
         if (dateTo)     params.set('date_to', dateTo);
 
+        params.set('page', '1');
+        params.set('page_size', '50');
+
         const statusEl = document.getElementById('statusFilter');
         if (statusEl && statusEl.value) {
             params.set('status', statusEl.value);
@@ -1630,10 +1640,19 @@
 
         fetch(`${API_URL}?${params.toString()}`, { credentials: 'same-origin' })
             .then(r => r.json())
-            .then(data => {
+            .then(response => {
+                const data = response.results !== undefined
+                    ? response.results
+                    : response;
+
                 allData = data;
                 gridApi.setGridOption('rowData', data);
                 updateSummary(data);
+                
+                const total = response.count !== undefined
+                    ? response.count
+                    :data.length;
+
                 updateStatus(`Found ${data.length} records`, 'success');
                 showLoading(false);
 

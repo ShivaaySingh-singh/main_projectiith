@@ -22,6 +22,7 @@ from django.http import HttpResponse
 from .forms import ReceiptForm
 from datetime import date
 from django.contrib.admin.views.decorators import staff_member_required
+from .pagination import StandardPagination
 
 
 import json
@@ -442,6 +443,20 @@ class GenericModelAPIView(APIView):
         
     }
 
+    MODEL_PAGE_SIZE = {
+        "payment":                 50,
+        "expenditure":             50,
+        "commitment":              50,
+        "billinward":              50,
+        "receipt":                 50,
+        "projectsanctiondistribution": 50,
+        "seedgrant":                100,
+        "tdggrant":                 100,
+        "project":                  100,
+        "payee":                    100,
+        "fundrequest":              50,
+    }
+
     def get_model_and_serializer(self, model_name):
         return self.MODEL_CONFIG.get(model_name.lower(), (None, None))
 
@@ -471,8 +486,23 @@ class GenericModelAPIView(APIView):
 
         queryset = self.apply_search_filters(request, model_name, queryset)
 
-        serializer = Serializer(queryset, many=True, context={'request': request})
+        if request.query_params.get("all") == "true":
+            serializer = Serializer(queryset, many=True, context={"request": request})
+            return Response(serializer.data)
+        
+        paginator = StandardPagination()
+        page_size = self.MODEL_PAGE_SIZE.get(model_name.lower(), 50)
+        paginator.page_size = page_size
+
+        page = paginator.paginate_queryset(queryset, request)
+
+        if page is not None:
+            serializer = Serializer( page, many=True, context={"request": request})
+
+            return paginator.get_paginated_response(serializer.data)
+        serializer = Serializer( queryset, many=True, context={"request": request})
         return Response(serializer.data)
+
     
     def apply_search_filters(self, request, model_name, queryset):
         model_lower = model_name.lower()
